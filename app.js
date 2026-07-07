@@ -15,7 +15,7 @@ const DB = {
   save(s) { localStorage.setItem(this.key, JSON.stringify(s)); },
   fresh() {
     return {
-      profile: { name: '', goal: '85' },   // goal handicap tier
+      profile: { name: '', goal: '85', startCap: null, weak: null, onboarded: false }, // goal tier + self-reported starting point
       rounds: [],                            // completed rounds
       practice: [],                          // logged range/practice sessions
       draft: null                            // in-progress round
@@ -203,7 +203,10 @@ function handicapFrom(diffs) {
 function capState() {
   const diffs = S.rounds.map(roundDifferential);
   const index = handicapFrom(diffs);
-  if (index == null) return { established: false, roundsNeeded: Math.max(1, 3 - S.rounds.length), index: null };
+  if (index == null) {
+    const sc = (S.profile.startCap != null) ? S.profile.startCap : null;
+    return { established: false, selfReported: sc != null, index: sc, roundsNeeded: Math.max(1, 3 - S.rounds.length) };
+  }
   const prev = S.rounds.length > 3 ? handicapFrom(diffs.slice(0, -1)) : null;
   const trend = (prev != null) ? Math.round((index - prev) * 10) / 10 : null;
   return { established: true, index, trend };
@@ -248,6 +251,7 @@ document.querySelectorAll('#tabbar button').forEach(b =>
 
 function render() {
   if (TAB === 'home') return viewHome();
+  if (TAB === 'onboard') return viewOnboard();
   if (TAB === 'rounds') return viewRounds();
   if (TAB === 'play') return viewPlay();
   if (TAB === 'range') return viewRange();
@@ -263,20 +267,87 @@ function header(title, sub) {
 }
 
 /* ============================================================
+   VIEW: ONBOARD (ask cap first, then generalize the game)
+   ============================================================ */
+let ONBOARD = null;
+const CAP_LEVELS = [['New / high','28'],['Bogey golfer','18'],['Mid ~12','12'],['Low single','6'],['Scratch','0']];
+function goalFromCap(c) { return c >= 18 ? '95' : c >= 12 ? '90' : c >= 8 ? '85' : c >= 4 ? '80' : 'scr'; }
+
+function viewOnboard() {
+  if (!ONBOARD) ONBOARD = { cap: (S.profile.startCap ?? ''), weak: S.profile.weak || null };
+  const O = ONBOARD;
+  app.innerHTML = header('Set up', 'so Coach can help from day one') + `
+    <div class="card">
+      <h3>1 · Your current cap</h3>
+      <div class="hint" style="margin-bottom:10px">Know your handicap? Enter it. Not sure — pick your level and we'll estimate.</div>
+      <input id="obCap" type="number" inputmode="decimal" value="${O.cap}" placeholder="e.g. 14.5"
+        oninput="ONBOARD.cap=this.value" style="width:100%;margin-bottom:12px"/>
+      <div class="seg" style="flex-wrap:wrap;gap:8px">
+        ${CAP_LEVELS.map(([lbl,v]) => `<button onclick="obSetLevel('${v}')" style="flex:1 0 30%">${lbl}<small>~${v}</small></button>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <h3>2 · Your weak spot</h3>
+      <div class="hint" style="margin-bottom:12px">Tap the part of your game that costs you most — Coach will start there.</div>
+      <div class="focus-grid">
+        ${Object.entries(FOCUS).map(([k,f]) => `
+          <button class="focus-tile ${O.weak===k?'on':''}" onclick="obSetWeak('${k}')">
+            <div class="fi">${f.icon}</div><div>${f.label}</div></button>`).join('')}
+      </div>
+    </div>
+    <button class="btn" onclick="obSave()">Save & continue →</button>
+    <div style="height:10px"></div>
+    <button class="btn ghost sm" onclick="obSkip()">Skip — I'll just log rounds</button>`;
+}
+function obSetLevel(v) { ONBOARD.cap = v; render(); }
+function obSetWeak(k) { ONBOARD.weak = (ONBOARD.weak === k ? null : k); render(); }
+function obSave() {
+  const c = parseFloat(ONBOARD.cap);
+  S.profile.startCap = isFinite(c) ? c : null;
+  S.profile.weak = ONBOARD.weak || null;
+  S.profile.onboarded = true;
+  if (S.profile.startCap != null) S.profile.goal = goalFromCap(S.profile.startCap);
+  ONBOARD = null; persist(); go('home');
+}
+function obSkip() { S.profile.onboarded = true; ONBOARD = null; persist(); go('home'); }
+
+/* ============================================================
    VIEW: HOME / STATS
    ============================================================ */
 function viewHome() {
   const st = aggregate(S.rounds);
   if (!st) {
-    app.innerHTML = header('ZeroCap', 'play to zero') + `
-      <div class="empty">
-        <div class="big-ico">⛳</div>
-        <h2>No rounds yet</h2>
-        <p>Tap <b>Play</b> to log your first round. Just score, putts, fairway & penalties per hole — ZeroCap figures out the rest.</p>
-        <button class="btn" onclick="go('play')">Start a round</button>
-        <div style="height:12px"></div>
-        <button class="btn ghost sm" onclick="loadSample()">Load sample data to explore</button>
-      </div>`;
+    const cap = capState();
+    // Brand-new: welcome → onboarding
+    if (!S.profile.onboarded && S.profile.startCap == null) {
+      app.innerHTML = header('ZeroCap', 'play to zero') + `
+        <div class="empty">
+          <div class="big-ico">⛳</div>
+          <h2>Welcome to ZeroCap</h2>
+          <p>Let's set your starting cap and get a read on your game — 20 seconds — so Coach can help before your very first round.</p>
+          <button class="btn" onclick="go('onboard')">Set up my game →</button>
+          <div style="height:12px"></div>
+          <button class="btn ghost sm" onclick="loadSample()">Explore with sample data</button>
+        </div>`;
+      return;
+    }
+    // Onboarded but no rounds yet: show self-reported starting cap + a seeded plan
+    const weak = S.profile.weak ? FOCUS[S.profile.weak] : null;
+    app.innerHTML = header('Your Stats', 'starting point') + `
+      <div class="hero">
+        <div class="cap" style="margin-bottom:2px;letter-spacing:1.5px">STARTING CAP</div>
+        <div class="big">${fmtCap(cap.index)}</div>
+        <div class="cap">self-reported · log a round to start tracking for real</div>
+      </div>
+      ${weak ? `<div class="card" style="border-color:var(--gold)">
+        <h3>Where to start</h3>
+        <div style="font-size:16px">You said <b>${weak.label}</b> is your weak spot. Warm it up, then log a round so Coach can confirm it with real data.</div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn" onclick="go('play')">Log a round</button>
+          <button class="btn ghost" onclick="startSession('${S.profile.weak}')">Practice ${weak.label}</button>
+        </div>
+      </div>` : `<button class="btn" onclick="go('play')">Log your first round ⛳</button>`}
+      <div class="pill-note" style="margin-top:14px">Your real cap starts computing after 3 logged rounds and replaces this self-reported number.</div>`;
     return;
   }
   const sl = strokesLost(st, S.profile.goal);
@@ -539,8 +610,22 @@ function renderRangeLog() {
 function viewCoach() {
   const st = aggregate(S.rounds);
   if (!st) {
+    const weakKey = S.profile.weak;
+    if (weakKey) {
+      const f = FOCUS[weakKey];
+      app.innerHTML = header('Coach', 'starting plan') + `
+        <div class="card" style="border-color:var(--gold)">
+          <h3>🎯 Starting focus: ${f.label}</h3>
+          <div class="hint" style="margin-bottom:14px">You told us this is your weak spot — here's where to start. Log a round and Coach confirms it with real strokes-lost data.</div>
+          ${DRILLS[weakKey].map(d => `<div class="drill-card" onclick="logDrill('${weakKey}','${d.key}')">
+            <div class="dc-top"><b>${d.name}</b><span class="chip good">good: ${d.target}/${d.max}</span></div>
+            <div class="dc-desc">${d.desc}</div><div class="dc-log">Log at range →</div></div>`).join('')}
+        </div>
+        <button class="btn" onclick="go('play')">Log a round for full analysis</button>`;
+      return;
+    }
     app.innerHTML = header('Coach') + `<div class="empty"><div class="big-ico">🎯</div>
-      <h2>Coach needs data</h2><p>Log a round or two and Coach will pinpoint exactly where you're losing strokes and what to practice.</p>
+      <h2>Coach needs data</h2><p>Log a round or two and Coach will pinpoint exactly where you're losing strokes and what to practice. Or set your weak spot in <b>You → Your game</b>.</p>
       <button class="btn" onclick="go('play')">Log a round</button></div>`;
     return;
   }
@@ -843,6 +928,16 @@ function viewSettings() {
         </select></div>
     </div>
     <div class="card">
+      <h3>Your game</h3>
+      <div class="row"><div class="lbl">Starting cap<small>self-reported, used until 3 rounds logged</small></div>
+        <input type="number" inputmode="decimal" value="${S.profile.startCap ?? ''}" onchange="setStartCap(this.value)" placeholder="—" style="width:88px"/></div>
+      <div class="row"><div class="lbl">Weak spot<small>Coach's starting focus</small></div>
+        <select onchange="setWeak(this.value)">
+          <option value="">—</option>
+          ${Object.entries(FOCUS).map(([k,f])=>`<option value="${k}" ${S.profile.weak===k?'selected':''}>${f.label}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="card">
       <h3>Data</h3>
       <div class="btn-row" style="margin-bottom:10px">
         <button class="btn ghost sm" onclick="loadSample()">Load sample rounds</button>
@@ -854,6 +949,8 @@ function viewSettings() {
 }
 function setName(v){ S.profile.name = v.trim(); persist(); }
 function setGoal(v){ S.profile.goal = v; persist(); }
+function setStartCap(v){ const n = parseFloat(v); S.profile.startCap = isFinite(n) ? n : null; persist(); }
+function setWeak(v){ S.profile.weak = v || null; persist(); }
 function wipe(){ if(confirm('Erase ALL rounds and settings?')){ S = DB.fresh(); persist(); go('home'); } }
 function exportData(){
   const blob = new Blob([JSON.stringify(S,null,2)], {type:'application/json'});

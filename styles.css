@@ -202,6 +202,7 @@ select, input[type=text] {
   display: flex; flex-direction: column; align-items: center; gap: 10px; font-family: inherit;
 }
 .focus-tile:active { background: var(--green-dk); }
+.focus-tile.on { background: var(--green); border-color: var(--green-lt); box-shadow: 0 4px 14px rgba(11,107,58,.35); }
 .focus-tile .fi { font-size: 34px; }
 
 /* ---------- Range: drill cards ---------- */
