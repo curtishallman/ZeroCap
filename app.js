@@ -52,10 +52,10 @@ const TIERS = {
 
 /* Focus areas — shared by Coach (leaks) and Range (practice). */
 const FOCUS = {
-  tee:      { label: 'Off the tee', icon: '🚀' },
-  approach: { label: 'Approach',    icon: '🎯' },
-  short:    { label: 'Short game',  icon: '⛳' },
-  putting:  { label: 'Putting',     icon: '🥅' },
+  tee:      { label: 'Off the tee', icon: '🚀', blurb: 'driving & accuracy' },
+  approach: { label: 'Approach',    icon: '🎯', blurb: 'irons & hitting greens' },
+  short:    { label: 'Short game',  icon: '⛳', blurb: 'chipping & pitching' },
+  putting:  { label: 'Putting',     icon: '🥅', blurb: 'on the greens' },
 };
 
 /* Structured, scoreable drills. result out of `max`; `target` is a "good" score. */
@@ -270,29 +270,40 @@ function header(title, sub) {
    VIEW: ONBOARD (ask cap first, then generalize the game)
    ============================================================ */
 let ONBOARD = null;
-const CAP_LEVELS = [['New / high','28'],['Bogey golfer','18'],['Mid ~12','12'],['Low single','6'],['Scratch','0']];
+const CAP_LEVELS = [
+  ['Beginner', 'new · 25+', '25'],
+  ['High', 'high teens · ~18', '18'],
+  ['Mid', 'low teens · ~12', '12'],
+  ['Low', 'single digits · ~6', '6'],
+  ['Scratch', 'even par · 0', '0'],
+];
 function goalFromCap(c) { return c >= 18 ? '95' : c >= 12 ? '90' : c >= 8 ? '85' : c >= 4 ? '80' : 'scr'; }
 
 function viewOnboard() {
-  if (!ONBOARD) ONBOARD = { cap: (S.profile.startCap ?? ''), weak: S.profile.weak || null };
+  if (!ONBOARD) ONBOARD = { cap: (S.profile.startCap != null ? String(S.profile.startCap) : ''), weak: S.profile.weak || null };
   const O = ONBOARD;
   app.innerHTML = header('Set up', 'so Coach can help from day one') + `
     <div class="card">
       <h3>1 · Your current cap</h3>
-      <div class="hint" style="margin-bottom:10px">Know your handicap? Enter it. Not sure — pick your level and we'll estimate.</div>
-      <input id="obCap" type="number" inputmode="decimal" value="${O.cap}" placeholder="e.g. 14.5"
-        oninput="ONBOARD.cap=this.value" style="width:100%;margin-bottom:12px"/>
-      <div class="seg" style="flex-wrap:wrap;gap:8px">
-        ${CAP_LEVELS.map(([lbl,v]) => `<button onclick="obSetLevel('${v}')" style="flex:1 0 30%">${lbl}<small>~${v}</small></button>`).join('')}
+      <div class="hint" style="margin-bottom:12px">Pick the level that fits you — or type your exact handicap below.</div>
+      <div class="focus-grid">
+        ${CAP_LEVELS.map(([lbl,sub,v]) => `
+          <button class="focus-tile ${String(O.cap)===v?'on':''}" onclick="obSetLevel('${v}')">
+            <div class="ft-label">${lbl}</div><div class="ft-blurb">${sub}</div></button>`).join('')}
+      </div>
+      <div class="field" style="margin:16px 0 0">
+        <label>Know your exact handicap?</label>
+        <input id="obCap" type="number" inputmode="decimal" value="${O.cap}" placeholder="e.g. 14.5"
+          oninput="obTypeCap(this.value)" style="width:100%;font-size:18px;padding:14px"/>
       </div>
     </div>
     <div class="card">
       <h3>2 · Your weak spot</h3>
-      <div class="hint" style="margin-bottom:12px">Tap the part of your game that costs you most — Coach will start there.</div>
+      <div class="hint" style="margin-bottom:12px">Which part of your game costs you most? Coach will start there.</div>
       <div class="focus-grid">
         ${Object.entries(FOCUS).map(([k,f]) => `
           <button class="focus-tile ${O.weak===k?'on':''}" onclick="obSetWeak('${k}')">
-            <div class="fi">${f.icon}</div><div>${f.label}</div></button>`).join('')}
+            <div class="ft-label">${f.label}</div><div class="ft-blurb">${f.blurb}</div></button>`).join('')}
       </div>
     </div>
     <button class="btn" onclick="obSave()">Save & continue →</button>
@@ -300,6 +311,11 @@ function viewOnboard() {
     <button class="btn ghost sm" onclick="obSkip()">Skip — I'll just log rounds</button>`;
 }
 function obSetLevel(v) { ONBOARD.cap = v; render(); }
+function obTypeCap(v) {                     // typing an exact value re-lights matching tile (or none)
+  const wasPreset = CAP_LEVELS.some(l => l[2] === String(ONBOARD.cap));
+  ONBOARD.cap = v;
+  if (wasPreset || CAP_LEVELS.some(l => l[2] === String(v))) render();   // only re-render when tile-lit state changes
+}
 function obSetWeak(k) { ONBOARD.weak = (ONBOARD.weak === k ? null : k); render(); }
 function obSave() {
   const c = parseFloat(ONBOARD.cap);
@@ -547,7 +563,7 @@ function renderRangeLog() {
       <div class="focus-grid">
         ${Object.entries(FOCUS).map(([k, f]) => `
           <button class="focus-tile" onclick="rangePickFocus('${k}')">
-            <div class="fi">${f.icon}</div><div>${f.label}</div></button>`).join('')}
+            <div class="ft-label">${f.label}</div><div class="ft-blurb">${f.blurb}</div></button>`).join('')}
       </div>
       <button class="btn ghost" onclick="rangeCancel()">Cancel</button>`;
     return;

@@ -199,12 +199,15 @@ select, input[type=text] {
 .focus-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 14px; }
 .focus-tile {
   appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--txt);
-  border-radius: 16px; padding: 24px 12px; font-size: 15px; font-weight: 700; cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; gap: 10px; font-family: inherit;
+  border-radius: 16px; padding: 16px 16px; cursor: pointer; font-family: inherit;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 4px; text-align: left; min-height: 74px;
 }
 .focus-tile:active { background: var(--green-dk); }
 .focus-tile.on { background: var(--green); border-color: var(--green-lt); box-shadow: 0 4px 14px rgba(11,107,58,.35); }
-.focus-tile .fi { font-size: 34px; }
+.ft-label { font-size: 16px; font-weight: 700; }
+.ft-blurb { font-size: 12px; color: var(--muted); }
+.focus-tile.on .ft-blurb { color: rgba(255,255,255,.78); }
 
 /* ---------- Range: drill cards ---------- */
 .drill-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; cursor: pointer; }
