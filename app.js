@@ -224,6 +224,24 @@ function fmtCap(idx) {
   if (idx == null) return '—';
   return idx < 0 ? '+' + Math.abs(idx).toFixed(1) : idx.toFixed(1);   // "+" = plus handicap
 }
+// Compare a round to the player's cap and hand out praise or grief.
+function roundCallout(r) {
+  const cap = capState();
+  if (cap.index == null) return null;
+  const diff = roundDifferential(r);
+  const over = diff - cap.index;                 // + means worse than cap
+  const capStr = fmtCap(cap.index);
+  const played = diff.toFixed(1);
+  if (over >= 4)    return { tone: 'bad',  msg: `Oof. That one played to <b>${played}</b> — well above your <b>${capStr}</b> cap. 👀 The cap doesn't lie. Get to the Range.` };
+  if (over >= 1.5)  return { tone: 'warn', msg: `That played to <b>${played}</b>, a bit over your <b>${capStr}</b> cap. Shake it off and grind it back.` };
+  if (over <= -1.5) return { tone: 'good', msg: `🔥 <b>${played}</b> — better than your <b>${capStr}</b> cap. Keep that up and it's dropping.` };
+  return { tone: 'good', msg: `Right around your <b>${capStr}</b> cap. Steady golf.` };
+}
+function calloutCard(c) {
+  if (!c) return '';
+  const col = c.tone === 'bad' ? 'var(--red)' : c.tone === 'warn' ? 'var(--gold)' : 'var(--green-lt)';
+  return `<div class="card" style="border-color:${col}"><div style="font-size:15px;line-height:1.5">${c.msg}</div></div>`;
+}
 function capSpark(hist) {
   if (hist.length < 2) return '';
   const show = hist.slice(-14);
@@ -240,6 +258,7 @@ function capSpark(hist) {
    ROUTER
    ============================================================ */
 let TAB = 'home';
+let flashRoundId = null;   // id of a just-saved round, to show its callout once on Home
 function go(tab) {
   TAB = tab;
   document.querySelectorAll('#tabbar button').forEach(b =>
@@ -276,6 +295,7 @@ const CAP_LEVELS = [
   ['Mid', 'low teens · ~12', '12'],
   ['Low', 'single digits · ~6', '6'],
   ['Scratch', 'even par · 0', '0'],
+  ['Plus', 'better than scratch · +2', '-2'],
 ];
 function goalFromCap(c) { return c >= 18 ? '95' : c >= 12 ? '90' : c >= 8 ? '85' : c >= 4 ? '80' : 'scr'; }
 
@@ -373,6 +393,9 @@ function viewHome() {
   const cap = capState();
   const hist = capHistory();
   const hasRatings = S.rounds.some(r => r.rating != null);
+  const flashed = flashRoundId && last.id === flashRoundId;
+  flashRoundId = null;                                   // consume — only show once
+  const callout = flashed ? roundCallout(last) : null;
 
   const capSub = !cap.established
     ? `log ${cap.roundsNeeded} more round${cap.roundsNeeded > 1 ? 's' : ''} for your first cap`
@@ -387,6 +410,8 @@ function viewHome() {
       <div class="big">${fmtCap(cap.index)}</div>
       <div class="cap">${capSub}</div>
     </div>
+
+    ${calloutCard(callout)}
 
     ${cap.established && hist.length >= 2 ? `<div class="card">
       <h3>Cap trend · last ${Math.min(hist.length, 14)} rounds</h3>
@@ -869,7 +894,7 @@ function finishRound() {
   const tp = d.holes.reduce((a, h) => a + (h.score - h.par), 0);
   if (!confirm(`Save this round?\n\nScore: ${total} (${relStr(tp)})`)) return;
   S.rounds.push({ id: d.id, date: d.date, course: d.course, rating: d.rating ?? null, slope: d.slope ?? null, holes: d.holes });
-  S.draft = null; persist();
+  S.draft = null; flashRoundId = d.id; persist();
   go('home');
 }
 
@@ -912,6 +937,7 @@ function openRound(id) {
   const diff = roundDifferential(r);
   app.innerHTML = header('Scorecard', `${r.course || 'Round'} · ${fmtDate(r.date)}`) + `
     <div class="hero"><div class="big">${total}</div><div class="cap">${relStr(tp)} to par · cap differential ${diff.toFixed(1)}${r.rating ? ` (rating ${r.rating}/slope ${r.slope || 113})` : ''}</div></div>
+    ${calloutCard(roundCallout(r))}
     <div class="card"><h3>Hole by hole</h3>
       <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:2px">${cells}</div></div>
     <div class="grid">
