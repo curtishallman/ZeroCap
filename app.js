@@ -168,6 +168,72 @@ function strokesLost(stats, tierKey) {
 }
 
 /* ============================================================
+   HANDICAP (the "cap") — WHS-style estimate
+   Score Differential = (AGS − Course Rating) × 113 / Slope.
+   With no rating/slope entered we default rating=par, slope=113,
+   so a differential collapses to score-to-par (a fair estimate).
+   Index = average of the best N of last 20, per the WHS table.
+   ============================================================ */
+function roundDifferential(r) {
+  const total = r.holes.reduce((a, h) => a + h.score, 0);
+  const par = r.holes.reduce((a, h) => a + h.par, 0);
+  const rating = (r.rating != null) ? r.rating : par;
+  const slope = (r.slope != null && r.slope > 0) ? r.slope : 113;
+  let diff = (total - rating) * 113 / slope;
+  if (r.holes.length <= 9) diff *= 2;         // rough 18-hole equivalent
+  return diff;
+}
+// WHS table: how many of the lowest differentials to use, + adjustment
+function whsUsed(n) {
+  if (n < 3) return null;
+  const T = { 3:[1,-2], 4:[1,-1], 5:[1,0], 6:[2,-1], 7:[2,0], 8:[2,0],
+    9:[3,0], 10:[3,0], 11:[3,0], 12:[4,0], 13:[4,0], 14:[4,0],
+    15:[5,0], 16:[5,0], 17:[6,0], 18:[6,0], 19:[7,0], 20:[8,0] };
+  const row = T[Math.min(n, 20)];
+  return { count: row[0], adj: row[1] };
+}
+function handicapFrom(diffs) {
+  const recent = diffs.slice(-20);
+  const u = whsUsed(recent.length);
+  if (!u) return null;
+  const lowest = [...recent].sort((a, b) => a - b).slice(0, u.count);
+  const avg = lowest.reduce((a, b) => a + b, 0) / lowest.length;
+  return Math.round((avg + u.adj) * 10) / 10;
+}
+function capState() {
+  const diffs = S.rounds.map(roundDifferential);
+  const index = handicapFrom(diffs);
+  if (index == null) return { established: false, roundsNeeded: Math.max(1, 3 - S.rounds.length), index: null };
+  const prev = S.rounds.length > 3 ? handicapFrom(diffs.slice(0, -1)) : null;
+  const trend = (prev != null) ? Math.round((index - prev) * 10) / 10 : null;
+  return { established: true, index, trend };
+}
+function capHistory() {                        // cap recomputed after each round (>=3)
+  const diffs = S.rounds.map(roundDifferential);
+  const hist = [];
+  for (let i = 3; i <= diffs.length; i++) {
+    const v = handicapFrom(diffs.slice(0, i));
+    if (v != null) hist.push(v);
+  }
+  return hist;
+}
+function fmtCap(idx) {
+  if (idx == null) return '—';
+  return idx < 0 ? '+' + Math.abs(idx).toFixed(1) : idx.toFixed(1);   // "+" = plus handicap
+}
+function capSpark(hist) {
+  if (hist.length < 2) return '';
+  const show = hist.slice(-14);
+  const min = Math.min(...show), max = Math.max(...show), range = (max - min) || 1;
+  const bars = show.map((v, i, arr) => {
+    const h = 10 + ((max - v) / range) * 42;   // invert: lower cap = taller = improvement grows
+    const last = i === arr.length - 1;
+    return `<div style="flex:1;display:flex;align-items:flex-end"><div style="width:100%;height:${h}px;background:${last ? 'var(--green-lt)' : 'var(--card-2)'};border-radius:3px"></div></div>`;
+  }).join('');
+  return `<div style="display:flex;gap:3px;align-items:flex-end;height:56px;margin:12px 0 6px">${bars}</div>`;
+}
+
+/* ============================================================
    ROUTER
    ============================================================ */
 let TAB = 'home';
@@ -217,12 +283,29 @@ function viewHome() {
   const focus = sl.cats[0];
   const last = S.rounds[S.rounds.length - 1];
   const lastTP = last.holes.reduce((a, h) => a + (h.score - h.par), 0);
+  const cap = capState();
+  const hist = capHistory();
+  const hasRatings = S.rounds.some(r => r.rating != null);
+
+  const capSub = !cap.established
+    ? `log ${cap.roundsNeeded} more round${cap.roundsNeeded > 1 ? 's' : ''} for your first cap`
+    : cap.trend == null ? 'your estimated handicap'
+    : cap.trend < 0 ? `estimated handicap · <span style="color:#7be8a8">▼ ${Math.abs(cap.trend).toFixed(1)} improving</span>`
+    : cap.trend > 0 ? `estimated handicap · <span style="color:#ffb3a3">▲ ${cap.trend.toFixed(1)}</span>`
+    : 'estimated handicap · holding steady';
 
   app.innerHTML = header('Your Stats', `${st.rounds} round${st.rounds>1?'s':''} logged`) + `
     <div class="hero">
-      <div class="big">${st.scoringAvg18 >= 0 ? '+' : ''}${st.scoringAvg18.toFixed(1)}</div>
-      <div class="cap">avg score to par (per 18)</div>
+      <div class="cap" style="margin-bottom:2px;letter-spacing:1.5px">${cap.established ? 'ESTIMATED CAP' : 'YOUR CAP'}</div>
+      <div class="big">${fmtCap(cap.index)}</div>
+      <div class="cap">${capSub}</div>
     </div>
+
+    ${cap.established && hist.length >= 2 ? `<div class="card">
+      <h3>Cap trend · last ${Math.min(hist.length, 14)} rounds</h3>
+      ${capSpark(hist)}
+      <div class="hint">${cap.index > 0 ? `<b>${cap.index.toFixed(1)}</b> to scratch. ` : `You're at scratch or better 🏆 `}Best 8 of your last 20 (WHS-style). ${hasRatings ? '' : 'Add course rating & slope when you play for sharper numbers.'}</div>
+    </div>` : ''}
 
     <div class="card" style="border-color:var(--gold)">
       <h3>Biggest leak vs ${sl.tier.label}</h3>
@@ -235,6 +318,8 @@ function viewHome() {
 
     <div class="section-title">The numbers</div>
     <div class="grid">
+      <div class="stat"><div class="v">${st.scoringAvg18 >= 0 ? '+' : ''}${st.scoringAvg18.toFixed(1)}</div><div class="l">Avg to par</div></div>
+      <div class="stat"><div class="v">${last.holes.reduce((a,h)=>a+h.score,0)}</div><div class="l">Last score</div></div>
       ${statCard(pct(st.firPct), 'Fairways', st.firPct, TIERS[S.profile.goal].fir)}
       ${statCard(pct(st.girPct), 'Greens (GIR)', st.girPct, TIERS[S.profile.goal].gir)}
       ${statCard(st.puttsPer18.toFixed(1), 'Putts / round', st.puttsPer18, TIERS[S.profile.goal].putts, true)}
@@ -451,24 +536,6 @@ function renderRangeLog() {
 /* ============================================================
    VIEW: COACH (strokes-lost breakdown + practice plan)
    ============================================================ */
-const PRACTICE = {
-  tee: { title: 'Off the tee', drills: [
-    'Play a "fairway finder" club off tight holes — accuracy over 10 yards of distance.',
-    'On the range, pick a target & fairway width; track hit % over 20 balls.',
-    'Cut penalties: club down when trouble is in play. Bogey > double.' ]},
-  approach: { title: 'Approach', drills: [
-    'Dial in wedge distances: hit 10 balls each at 50/75/100 yds, note carry.',
-    'Aim for the fat middle of greens, not pins — GIR is king.',
-    'Know your real club distances (carry, not "hero" numbers).' ]},
-  short: { title: 'Short game', drills: [
-    'Up-and-down ladder: 10 chips from 10–20 yds, get each within a putter length.',
-    'One-club chipping — learn to fly-and-roll to a spot.',
-    'Practice the "worst-case" shot: bunkers & bad lies you actually face.' ]},
-  putting: { title: 'Putting', drills: [
-    'Lag drill: 6 putts from 30–40 ft, goal is zero 3-putts.',
-    'Make circle: 15 putts from 3–4 ft around the hole, must make 12+.',
-    'Speed first, line second — most 3-putts are distance control.' ]},
-};
 function viewCoach() {
   const st = aggregate(S.rounds);
   if (!st) {
@@ -549,6 +616,7 @@ function newDraft() {
     id: uid(),
     date: new Date().toISOString(),
     course: '',
+    rating: null, slope: null,
     holesCount: 18,
     idx: 0,
     holes: PAR_TEMPLATE.map((par, i) => ({ num: i + 1, par, score: par, putts: 2, fir: par >= 4 ? null : null, pen: 0 }))
@@ -567,9 +635,14 @@ function viewPlay() {
             <button class="on" id="h18" onclick="pickHoles(18)">18</button>
             <button id="h9" onclick="pickHoles(9)">9</button>
           </div></div>
+        <div class="field"><label>Course rating & slope (optional — sharpens your cap)</label>
+          <div style="display:flex;gap:10px">
+            <input id="cRating" type="number" inputmode="decimal" placeholder="Rating (e.g. 71.2)" style="width:100%"/>
+            <input id="cSlope" type="number" inputmode="numeric" placeholder="Slope (e.g. 128)" style="width:100%"/>
+          </div></div>
         <button class="btn" onclick="startRound()">Start round ⛳</button>
       </div>
-      <div class="pill-note">Par defaults to a standard layout — you can bump each hole's par in one tap as you play.</div>`;
+      <div class="pill-note">Par defaults to a standard layout — you can bump each hole's par in one tap as you play. Leave rating/slope blank and we'll estimate your cap from par.</div>`;
     return;
   }
   renderHole();
@@ -584,6 +657,10 @@ function pickHoles(n) {
 function startRound() {
   const d = newDraft();
   d.course = ($('#courseName')?.value || '').trim();
+  const rating = parseFloat($('#cRating')?.value);
+  const slope = parseInt($('#cSlope')?.value, 10);
+  d.rating = isFinite(rating) ? rating : null;
+  d.slope = isFinite(slope) ? slope : null;
   d.holesCount = _holesPick;
   if (_holesPick === 9) d.holes = d.holes.slice(0, 9);
   S.draft = d; persist();
@@ -690,7 +767,7 @@ function finishRound() {
   const total = d.holes.reduce((a, h) => a + h.score, 0);
   const tp = d.holes.reduce((a, h) => a + (h.score - h.par), 0);
   if (!confirm(`Save this round?\n\nScore: ${total} (${relStr(tp)})`)) return;
-  S.rounds.push({ id: d.id, date: d.date, course: d.course, holes: d.holes });
+  S.rounds.push({ id: d.id, date: d.date, course: d.course, rating: d.rating ?? null, slope: d.slope ?? null, holes: d.holes });
   S.draft = null; persist();
   go('home');
 }
@@ -731,8 +808,9 @@ function openRound(id) {
       <div style="font-size:18px;font-weight:800;color:${c}">${h.score}</div>
       <div style="font-size:10px;color:var(--muted)">par ${h.par}</div></div>`;
   }).join('');
+  const diff = roundDifferential(r);
   app.innerHTML = header('Scorecard', `${r.course || 'Round'} · ${fmtDate(r.date)}`) + `
-    <div class="hero"><div class="big">${total}</div><div class="cap">${relStr(tp)} to par</div></div>
+    <div class="hero"><div class="big">${total}</div><div class="cap">${relStr(tp)} to par · cap differential ${diff.toFixed(1)}${r.rating ? ` (rating ${r.rating}/slope ${r.slope || 113})` : ''}</div></div>
     <div class="card"><h3>Hole by hole</h3>
       <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:2px">${cells}</div></div>
     <div class="grid">
