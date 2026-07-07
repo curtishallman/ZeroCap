@@ -18,12 +18,14 @@ const DB = {
       profile: { name: '', goal: '85', startCap: null, weak: null, onboarded: false }, // goal tier + self-reported starting point
       rounds: [],                            // completed rounds
       practice: [],                          // logged range/practice sessions
+      courses: {},                           // per-course GPS map: { key: { holes: { n: {tee,green} } } }
       draft: null                            // in-progress round
     };
   }
 };
 let S = DB.load();
 if (!S.practice) S.practice = [];            // migrate older saves
+if (!S.courses) S.courses = {};
 const persist = () => DB.save(S);
 
 /* ---------- Helpers ---------- */
@@ -261,6 +263,7 @@ let TAB = 'home';
 let flashRoundId = null;   // id of a just-saved round, to show its callout once on Home
 function go(tab) {
   TAB = tab;
+  if (tab !== 'play') stopGeo();          // don't burn battery off the course
   document.querySelectorAll('#tabbar button').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab));
   render();
@@ -736,6 +739,110 @@ function viewCoach() {
 }
 
 /* ============================================================
+   GPS shot tracking (Phase 1)
+   Phone marks its own position; distances via haversine.
+   Greens/tees saved per course so distances return next round.
+   ============================================================ */
+let gpsOn = false;         // opt-in per session
+let geoWatch = null;       // watchPosition id
+let lastPos = null;        // { lat, lng, acc }
+
+function metersBetween(a, b) {
+  const R = 6371000, rad = d => d * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const toYards = m => m * 1.09361;
+
+function startGeo() {
+  if (!('geolocation' in navigator) || geoWatch != null) return;
+  geoWatch = navigator.geolocation.watchPosition(
+    p => { lastPos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }; updateGeoLive(); },
+    () => { /* keep last fix; error surfaced in readout */ },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
+  );
+}
+function stopGeo() { if (geoWatch != null) { navigator.geolocation.clearWatch(geoWatch); geoWatch = null; } }
+function geoEnable() {
+  if (!('geolocation' in navigator)) { alert('This device has no GPS.'); return; }
+  gpsOn = true; startGeo(); renderHole();
+}
+
+function courseKey() { return ((S.draft && S.draft.course) || '(unnamed)').toLowerCase().trim() || '(unnamed)'; }
+function courseHoleGeo(num) { const c = S.courses[courseKey()]; return (c && c.holes && c.holes[num]) || null; }
+function saveCourseGeo(num, type, pos) {
+  const ck = courseKey();
+  const c = S.courses[ck] || (S.courses[ck] = { holes: {} });
+  (c.holes[num] || (c.holes[num] = {}))[type] = { lat: pos.lat, lng: pos.lng };
+  persist();
+}
+function greenForHole(h) {
+  const gm = (h.marks || []).find(m => m.type === 'green');
+  if (gm) return gm;
+  const cg = courseHoleGeo(h.num);
+  return (cg && cg.green) || null;
+}
+function geoMark(type) {
+  if (!lastPos) { alert('No GPS fix yet — give it a few seconds to settle.'); return; }
+  const h = curHole();
+  (h.marks || (h.marks = [])).push({ type, lat: lastPos.lat, lng: lastPos.lng, acc: lastPos.acc });
+  if (type === 'tee' || type === 'green') saveCourseGeo(h.num, type, lastPos);
+  persist(); renderHole();
+}
+function geoUndo() {
+  const h = curHole();
+  if (h.marks && h.marks.length) { h.marks.pop(); persist(); renderHole(); }
+}
+// live-update just the readout between renders (no full re-render, keeps it smooth)
+function updateGeoLive() {
+  const el = document.getElementById('geoLive');
+  if (!el || !S.draft || TAB !== 'play') return;
+  const h = curHole(), green = greenForHole(h);
+  const acc = lastPos ? Math.round(lastPos.acc) : null;
+  const dtg = (green && lastPos) ? Math.round(toYards(metersBetween(lastPos, green))) : null;
+  el.innerHTML = geoLiveInner(dtg, acc, green);
+}
+function geoLiveInner(dtg, acc, green) {
+  const accCls = acc != null && acc <= 8 ? 'good' : acc != null && acc <= 15 ? '' : 'bad';
+  const top = dtg != null
+    ? `<b style="font-size:36px;letter-spacing:-1px">${dtg}</b> <span style="color:var(--muted)">yds to green</span>`
+    : `<span class="hint">${green ? 'getting a fix…' : 'walk to the green and Mark it to unlock distances'}</span>`;
+  return `${top}<div style="margin-top:6px"><span class="chip ${accCls}">GPS ${acc != null ? '±' + acc + 'm' : 'searching…'}</span></div>`;
+}
+
+function gpsPanel(h) {
+  if (!gpsOn) {
+    return `<div class="card"><button class="btn ghost" onclick="geoEnable()">📍 Track shots with GPS</button>
+      <div class="hint" style="margin-top:8px;text-align:center">Live distance to the green + shot yardages. Optional.</div></div>`;
+  }
+  const marks = h.marks || [];
+  const hasTee = marks.some(m => m.type === 'tee');
+  const green = greenForHole(h);
+  const acc = lastPos ? Math.round(lastPos.acc) : null;
+  const dtg = (green && lastPos) ? Math.round(toYards(metersBetween(lastPos, green))) : null;
+
+  let shots = '';
+  let shotNum = 0;
+  for (let i = 1; i < marks.length; i++) {
+    const yds = Math.round(toYards(metersBetween(marks[i-1], marks[i])));
+    const label = marks[i].type === 'green' ? 'Approach → green' : `Shot ${++shotNum}`;
+    shots += `<div class="row" style="padding:9px 0"><div class="lbl">${label}</div><div style="font-weight:700;font-variant-numeric:tabular-nums">${yds} yds</div></div>`;
+  }
+
+  return `<div class="card">
+    <div id="geoLive" style="text-align:center;margin-bottom:14px">${geoLiveInner(dtg, acc, green)}</div>
+    <div class="btn-row">
+      ${!hasTee ? `<button class="btn ghost sm" onclick="geoMark('tee')">Mark tee</button>` : ''}
+      <button class="btn sm" onclick="geoMark('shot')">📍 At my ball</button>
+      <button class="btn ghost sm" onclick="geoMark('green')">Mark green</button>
+    </div>
+    ${marks.length ? `<div style="margin-top:8px">${shots}
+      <div style="text-align:right;margin-top:4px"><button class="btn ghost sm" onclick="geoUndo()">Undo last mark</button></div></div>` : ''}
+  </div>`;
+}
+
+/* ============================================================
    VIEW: PLAY (hole-by-hole entry)
    ============================================================ */
 function newDraft() {
@@ -799,6 +906,7 @@ function renderHole() {
   const h = d.holes[d.idx];
   const f = holeFacts(h);
   const prog = ((d.idx) / d.holes.length) * 100;
+  if (gpsOn) startGeo();
 
   app.innerHTML = `
     <div class="playtop">
@@ -811,6 +919,8 @@ function renderHole() {
       <div class="num">Hole ${h.num} of ${d.holes.length}</div>
       <div class="par">${h.score}<small> strokes</small></div>
     </div>
+
+    ${gpsPanel(h)}
 
     <div class="field">
       <label>Par</label>
