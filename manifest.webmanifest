@@ -1,7 +1,7 @@
 {
-  "name": "Grind · Golf",
-  "short_name": "Grind",
-  "description": "Log less, learn more. Fast golf stat tracking with strokes-lost coaching.",
+  "name": "ZeroCap · Golf",
+  "short_name": "ZeroCap",
+  "description": "Play to zero. Fast golf stat tracking with strokes-lost coaching to lower your handicap.",
   "start_url": "index.html",
   "display": "standalone",
   "orientation": "portrait",

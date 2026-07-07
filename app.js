@@ -1,5 +1,5 @@
 /* ============================================================
-   GRIND · golf stat tracker
+   ZEROCAP · golf stat tracker
    Design goal: minimum input per hole, maximum insight after.
    Per hole you tap: score, putts, fairway, penalties.
    GIR, 3-putts, up-and-downs are DERIVED, not entered.
@@ -168,11 +168,11 @@ function header(title, sub) {
 function viewHome() {
   const st = aggregate(S.rounds);
   if (!st) {
-    app.innerHTML = header('Grind', 'log less · learn more') + `
+    app.innerHTML = header('ZeroCap', 'play to zero') + `
       <div class="empty">
         <div class="big-ico">⛳</div>
         <h2>No rounds yet</h2>
-        <p>Tap <b>Play</b> to log your first round. Just score, putts, fairway & penalties per hole — Grind figures out the rest.</p>
+        <p>Tap <b>Play</b> to log your first round. Just score, putts, fairway & penalties per hole — ZeroCap figures out the rest.</p>
         <button class="btn" onclick="go('play')">Start a round</button>
         <div style="height:12px"></div>
         <button class="btn ghost sm" onclick="loadSample()">Load sample data to explore</button>
