@@ -817,10 +817,22 @@ function gpsPanel(h) {
       <div class="hint" style="margin-top:8px;text-align:center">Live distance to the green + shot yardages. Optional.</div></div>`;
   }
   const marks = h.marks || [];
-  const hasTee = marks.some(m => m.type === 'tee');
+  const hasGreen = marks.some(m => m.type === 'green');
   const green = greenForHole(h);
   const acc = lastPos ? Math.round(lastPos.acc) : null;
   const dtg = (green && lastPos) ? Math.round(toYards(metersBetween(lastPos, green))) : null;
+
+  // Stepped actions: tee → play → done. Only show the next relevant step.
+  let actions;
+  if (!marks.length) {
+    actions = `<button class="btn" onclick="geoMark('tee')">Mark tee</button>`;
+  } else if (hasGreen) {
+    actions = `<div class="hint" style="text-align:center;font-size:14px">✓ Hole tracked — on to the next tee</div>`;
+  } else {
+    actions = `<button class="btn" onclick="geoMark('shot')">📍 At my ball</button>
+      <div style="height:8px"></div>
+      <button class="btn ghost sm" onclick="geoMark('green')">I'm on the green</button>`;
+  }
 
   let shots = '';
   let shotNum = 0;
@@ -832,12 +844,8 @@ function gpsPanel(h) {
 
   return `<div class="card">
     <div id="geoLive" style="text-align:center;margin-bottom:14px">${geoLiveInner(dtg, acc, green)}</div>
-    <div class="btn-row">
-      ${!hasTee ? `<button class="btn ghost sm" onclick="geoMark('tee')">Mark tee</button>` : ''}
-      <button class="btn sm" onclick="geoMark('shot')">📍 At my ball</button>
-      <button class="btn ghost sm" onclick="geoMark('green')">Mark green</button>
-    </div>
-    ${marks.length ? `<div style="margin-top:8px">${shots}
+    ${actions}
+    ${marks.length ? `<div style="margin-top:10px">${shots}
       <div style="text-align:right;margin-top:4px"><button class="btn ghost sm" onclick="geoUndo()">Undo last mark</button></div></div>` : ''}
   </div>`;
 }
