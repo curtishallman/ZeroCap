@@ -13,6 +13,7 @@
   --blue: #4aa8d8;
   --radius: 16px;
   --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -27,7 +28,7 @@ body {
 #app {
   max-width: 560px;
   margin: 0 auto;
-  padding: 18px 16px calc(96px + var(--safe-b));
+  padding: calc(18px + var(--safe-t)) 16px calc(96px + var(--safe-b));
   min-height: 100vh;
 }
 
