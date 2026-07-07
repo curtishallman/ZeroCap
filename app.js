@@ -311,10 +311,11 @@ function viewOnboard() {
           <button class="focus-tile ${String(O.cap)===v?'on':''}" onclick="obSetLevel('${v}')">
             <div class="ft-label">${lbl}</div><div class="ft-blurb">${sub}</div></button>`).join('')}
       </div>
-      <div class="field" style="margin:16px 0 0">
-        <label>Know your exact handicap?</label>
+      <div class="field" style="margin:18px 0 0">
+        <label style="font-size:14px">Know your exact handicap? Type it</label>
         <input id="obCap" type="number" inputmode="decimal" value="${O.cap}" placeholder="e.g. 14.5"
-          oninput="obTypeCap(this.value)" style="width:100%;font-size:18px;padding:14px"/>
+          oninput="obTypeCap(this.value)"
+          style="width:100%;font-size:26px;font-weight:700;text-align:center;padding:18px 16px;border-radius:14px"/>
       </div>
     </div>
     <div class="card">

@@ -198,16 +198,22 @@ select, input[type=text] {
 /* ---------- Range: focus tiles ---------- */
 .focus-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 14px; }
 .focus-tile {
-  appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--txt);
-  border-radius: 16px; padding: 16px 16px; cursor: pointer; font-family: inherit;
+  position: relative;
+  appearance: none; border: 2px solid var(--line); background: var(--card); color: var(--txt);
+  border-radius: 16px; padding: 18px 16px; cursor: pointer; font-family: inherit;
   display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
-  gap: 4px; text-align: left; min-height: 74px;
+  gap: 4px; text-align: left; min-height: 84px;
 }
 .focus-tile:active { background: var(--green-dk); }
-.focus-tile.on { background: var(--green); border-color: var(--green-lt); box-shadow: 0 4px 14px rgba(11,107,58,.35); }
-.ft-label { font-size: 16px; font-weight: 700; }
-.ft-blurb { font-size: 12px; color: var(--muted); }
-.focus-tile.on .ft-blurb { color: rgba(255,255,255,.78); }
+.focus-tile.on { background: var(--green); border-color: #4ee08a; box-shadow: 0 6px 18px rgba(20,144,79,.45); }
+.focus-tile.on::after {
+  content: '✓'; position: absolute; top: 10px; right: 12px;
+  font-size: 15px; font-weight: 900; color: #fff;
+}
+.ft-label { font-size: 18px; font-weight: 800; letter-spacing: -0.2px; }
+.ft-blurb { font-size: 13px; color: var(--muted); }
+.focus-tile.on .ft-label { color: #fff; }
+.focus-tile.on .ft-blurb { color: rgba(255,255,255,.82); }
 
 /* ---------- Range: drill cards ---------- */
 .drill-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; cursor: pointer; }
