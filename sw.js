@@ -1,5 +1,5 @@
-/* Grind service worker — offline-first cache */
-const CACHE = 'grind-v1';
+/* ZeroCap service worker — offline-first cache */
+const CACHE = 'zerocap-v2';
 const ASSETS = [
   'index.html', 'styles.css', 'app.js',
   'manifest.webmanifest', 'icon.svg'

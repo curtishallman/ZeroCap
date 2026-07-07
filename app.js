@@ -17,17 +17,20 @@ const DB = {
     return {
       profile: { name: '', goal: '85' },   // goal handicap tier
       rounds: [],                            // completed rounds
+      practice: [],                          // logged range/practice sessions
       draft: null                            // in-progress round
     };
   }
 };
 let S = DB.load();
+if (!S.practice) S.practice = [];            // migrate older saves
 const persist = () => DB.save(S);
 
 /* ---------- Helpers ---------- */
 const $ = (sel, el = document) => el.querySelector(sel);
 const app = $('#app');
 const uid = () => 'r' + (S.rounds.length + 1) + '_' + (S._c = (S._c || 0) + 1);
+const gid = (p) => p + '_' + (S._c = (S._c || 0) + 1);   // generic id (sessions etc.)
 
 // standard 18-hole par template (par 72) — user can tweak each hole
 const PAR_TEMPLATE = [4,4,5,3,4,4,3,5,4, 4,3,4,5,4,4,3,4,5];
@@ -46,6 +49,36 @@ const TIERS = {
   '80': { label: 'Break 80',  fir:.57, gir:.50, putts:30, scramble:.42, pen:1.2 },
   'scr':{ label: 'Scratch',   fir:.62, gir:.61, putts:29, scramble:.55, pen:0.7 },
 };
+
+/* Focus areas — shared by Coach (leaks) and Range (practice). */
+const FOCUS = {
+  tee:      { label: 'Off the tee', icon: '🚀' },
+  approach: { label: 'Approach',    icon: '🎯' },
+  short:    { label: 'Short game',  icon: '⛳' },
+  putting:  { label: 'Putting',     icon: '🥅' },
+};
+
+/* Structured, scoreable drills. result out of `max`; `target` is a "good" score. */
+const DRILLS = {
+  tee: [
+    { key:'gate',  name:'Fairway Gate',  max:10, target:6, desc:'Pick two targets ~30 yds apart as your fairway. 10 drives — count how many finish between them.' },
+    { key:'shape', name:'Shape Control', max:10, target:6, desc:'On each ball, call "start left" or "start right" before you swing. 10 balls — count how many obeyed.' },
+  ],
+  approach: [
+    { key:'ladder', name:'Wedge Ladder', max:9,  target:5, desc:'3 balls each to 50 / 75 / 100 yds. Count how many finish within ~15 ft (out of 9).' },
+    { key:'green',  name:'Hit the Green', max:10, target:5, desc:'Pick a green-sized target. 10 approach shots — count how many "hit the green".' },
+  ],
+  short: [
+    { key:'updown',  name:'Up-&-Down Ladder', max:10, target:5, desc:'10 chips from 10–20 yds. Count how many finish within a putter length (a makeable up-and-down).' },
+    { key:'landing', name:'Landing Spot',      max:10, target:5, desc:'Drop a towel as a landing spot. 10 chips — count how many land on it.' },
+  ],
+  putting: [
+    { key:'circle', name:'Make Circle', max:15, target:12, desc:'15 putts from ~4 ft around the hole. Count total makes.' },
+    { key:'lag',    name:'Lag Ladder',  max:6,  target:4,  desc:'6 putts from 30–40 ft. Count how many finish inside 3 ft (tap-in range).' },
+    { key:'gate',   name:'Gate Drill',  max:10, target:8,  desc:'Two tees just wider than the ball, 3 ft ahead. 10 putts through the gate.' },
+  ],
+};
+function drillByKey(focus, key) { return (DRILLS[focus] || []).find(d => d.key === key); }
 
 /* ============================================================
    DERIVED per-hole facts
@@ -151,6 +184,7 @@ function render() {
   if (TAB === 'home') return viewHome();
   if (TAB === 'rounds') return viewRounds();
   if (TAB === 'play') return viewPlay();
+  if (TAB === 'range') return viewRange();
   if (TAB === 'coach') return viewCoach();
   if (TAB === 'settings') return viewSettings();
 }
@@ -234,6 +268,187 @@ function statCard(display, label, actual, target, lower = false) {
 }
 
 /* ============================================================
+   PRACTICE analytics (shared by Range + Coach)
+   ============================================================ */
+function practiceSummary() {
+  const now = Date.now();
+  const week = S.practice.filter(s => (now - new Date(s.date).getTime()) < 7 * 864e5);
+  const byFocus = {};
+  S.practice.forEach(s => { byFocus[s.focus] = (byFocus[s.focus] || 0) + 1; });
+  let mostFocus = null, mostN = 0;
+  for (const k in byFocus) if (byFocus[k] > mostN) { mostN = byFocus[k]; mostFocus = k; }
+  return { total: S.practice.length, week: week.length, byFocus, mostFocus };
+}
+function drillProgress() {
+  const groups = {};
+  S.practice.filter(s => s.drillKey && s.result != null).forEach(s => {
+    const id = s.focus + ':' + s.drillKey;
+    (groups[id] = groups[id] || { focus: s.focus, drillName: s.drillName, max: s.max, target: s.target, logs: [] }).logs.push(s);
+  });
+  return Object.values(groups).map(g => {
+    g.logs.sort((a, b) => new Date(a.date) - new Date(b.date));
+    g.first = g.logs[0].result;
+    g.last = g.logs[g.logs.length - 1].result;
+    g.best = Math.max(...g.logs.map(l => l.result));
+    g.count = g.logs.length;
+    g.trend = g.count > 1 ? g.last - g.first : 0;
+    return g;
+  }).sort((a, b) => b.count - a.count);
+}
+
+/* ============================================================
+   VIEW: RANGE (log practice sessions)
+   ============================================================ */
+let RANGE = null;   // in-progress logging flow (transient, not persisted)
+
+function viewRange() {
+  if (RANGE) return renderRangeLog();
+
+  const st = aggregate(S.rounds);
+  const leak = st ? strokesLost(st, S.profile.goal).cats[0] : null;
+  const sum = practiceSummary();
+
+  let banner = '';
+  if (leak && leak.v > 0.1) {
+    banner = `<div class="card" style="border-color:var(--gold)">
+      <h3>🎯 Coach says</h3>
+      <div style="font-size:16px;margin-bottom:10px">Your biggest leak is <b>${leak.label}</b> (-${leak.v.toFixed(1)} shots/round). Warm it up before you play.</div>
+      <button class="btn" onclick="startSession('${leak.key}')">Practice ${leak.label} →</button>
+    </div>`;
+  }
+
+  const sessions = [...S.practice].reverse().slice(0, 12).map(sessItem).join('');
+  const list = S.practice.length
+    ? `<div class="section-title">Recent sessions</div>${sessions}`
+    : `<div class="empty" style="padding:30px 10px"><div class="big-ico">🪣</div>
+        <h2>No practice logged</h2><p>Log what you work on at the range. Tie it to your leaks and watch your drill scores climb.</p></div>`;
+
+  app.innerHTML = header('Range', 'practice with purpose') + banner + `
+    <button class="btn" onclick="startSession(null)">+ Log a practice session</button>
+    ${S.practice.length ? `<div class="grid three" style="margin-top:14px">
+      <div class="stat"><div class="v">${sum.total}</div><div class="l">sessions</div></div>
+      <div class="stat"><div class="v">${sum.week}</div><div class="l">this week</div></div>
+      <div class="stat"><div class="v">${sum.mostFocus ? FOCUS[sum.mostFocus].icon : '–'}</div><div class="l">most practiced</div></div>
+    </div>` : ''}
+    ${list}`;
+}
+
+function sessItem(s) {
+  const f = FOCUS[s.focus] || { icon: '⛳', label: s.focus };
+  const badge = s.result != null
+    ? `<div class="rel ${s.result >= (s.target ?? 0) ? 'under' : 'over'}">${s.result}/${s.max}</div>`
+    : `<div class="rel even">${s.minutes ? s.minutes + 'm' : '—'}</div>`;
+  return `<div class="round-item">
+    <div><div style="font-size:16px;font-weight:700">${f.icon} ${s.drillName}</div>
+      <div class="meta">${f.label} · ${fmtDate(s.date)}${s.rating ? ' · ' + '★'.repeat(s.rating) : ''}</div></div>
+    ${badge}</div>`;
+}
+
+function startSession(focus) {
+  RANGE = { step: focus ? 'drill' : 'focus', focus: focus || null, drill: null, freeform: false, result: 0, minutes: 20, rating: 0, notes: '' };
+  go('range');
+}
+function logDrill(focus, key) {   // deep-link from Coach straight to a drill result
+  const d = drillByKey(focus, key);
+  RANGE = { step: 'result', focus, drill: key, freeform: false, result: Math.round(d.max / 2), minutes: 20, rating: 0, notes: '' };
+  go('range');
+}
+function rangePickFocus(f) { RANGE.focus = f; RANGE.step = 'drill'; render(); }
+function rangePickDrill(key) {
+  if (key === '') { RANGE.freeform = true; RANGE.drill = null; RANGE.result = null; }
+  else { RANGE.freeform = false; RANGE.drill = key; RANGE.result = Math.round(drillByKey(RANGE.focus, key).max / 2); }
+  RANGE.step = 'result'; render();
+}
+function rangeBump(field, delta, min, max) {
+  RANGE[field] = Math.max(min, Math.min(max, (RANGE[field] || 0) + delta)); render();
+}
+function rangeRating(r) { RANGE.rating = (RANGE.rating === r ? 0 : r); render(); }
+function rangeNotes(v) { RANGE.notes = v; }   // no re-render on keystroke
+function rangeBack() {
+  if (RANGE.step === 'result') { RANGE.step = 'drill'; render(); }
+  else if (RANGE.step === 'drill') { RANGE.step = 'focus'; RANGE.focus = null; render(); }
+  else { RANGE = null; render(); }
+}
+function rangeCancel() { RANGE = null; render(); }
+function rangeSave() {
+  const d = RANGE.drill ? drillByKey(RANGE.focus, RANGE.drill) : null;
+  S.practice.push({
+    id: gid('s'), date: new Date().toISOString(), focus: RANGE.focus,
+    drillKey: RANGE.drill || null, drillName: d ? d.name : 'Range session',
+    result: d ? RANGE.result : null, max: d ? d.max : null, target: d ? d.target : null,
+    minutes: RANGE.freeform ? RANGE.minutes : null,
+    rating: RANGE.rating || null, notes: (RANGE.notes || '').trim()
+  });
+  persist(); RANGE = null;
+  go('range');
+}
+
+function renderRangeLog() {
+  const r = RANGE;
+  // STEP 1: choose focus
+  if (r.step === 'focus') {
+    app.innerHTML = header('Log session', 'what did you work on?') + `
+      <div class="focus-grid">
+        ${Object.entries(FOCUS).map(([k, f]) => `
+          <button class="focus-tile" onclick="rangePickFocus('${k}')">
+            <div class="fi">${f.icon}</div><div>${f.label}</div></button>`).join('')}
+      </div>
+      <button class="btn ghost" onclick="rangeCancel()">Cancel</button>`;
+    return;
+  }
+  const f = FOCUS[r.focus];
+  // STEP 2: choose drill
+  if (r.step === 'drill') {
+    app.innerHTML = header(f.label, 'pick a drill — or just hit balls') + `
+      ${DRILLS[r.focus].map(d => `
+        <div class="drill-card" onclick="rangePickDrill('${d.key}')">
+          <div class="dc-top"><b>${d.name}</b><span class="chip good">good: ${d.target}/${d.max}</span></div>
+          <div class="dc-desc">${d.desc}</div>
+        </div>`).join('')}
+      <div class="drill-card" onclick="rangePickDrill('')">
+        <div class="dc-top"><b>🪣 Just hit balls</b></div>
+        <div class="dc-desc">Freeform session — log time & how it felt.</div>
+      </div>
+      <button class="btn ghost" onclick="rangeBack()">← Back</button>`;
+    return;
+  }
+  // STEP 3: result
+  const d = r.drill ? drillByKey(r.focus, r.drill) : null;
+  const stars = [1,2,3,4,5].map(n =>
+    `<button class="star ${r.rating >= n ? 'on' : ''}" onclick="rangeRating(${n})">★</button>`).join('');
+
+  app.innerHTML = header(d ? d.name : 'Range session', f.label) + `
+    ${d ? `
+      <div class="pill-note" style="margin-bottom:16px">${d.desc}</div>
+      <div class="field"><label>Your score — how many out of ${d.max}?</label>
+        <div class="stepper">
+          <button onclick="rangeBump('result',-1,0,${d.max})">−</button>
+          <div class="val">${r.result}<small>of ${d.max} · good is ${d.target}+</small></div>
+          <button onclick="rangeBump('result',1,0,${d.max})">+</button>
+        </div>
+      </div>`
+    : `
+      <div class="field"><label>Time at the range</label>
+        <div class="stepper">
+          <button onclick="rangeBump('minutes',-5,0,300)">−</button>
+          <div class="val">${r.minutes}<small>minutes</small></div>
+          <button onclick="rangeBump('minutes',5,0,300)">+</button>
+        </div>
+      </div>`}
+
+    <div class="field"><label>How'd it feel?</label>
+      <div class="rating">${stars}</div></div>
+
+    <div class="field"><label>Notes (optional)</label>
+      <textarea id="rnotes" rows="2" placeholder="swing thoughts, what clicked..." oninput="rangeNotes(this.value)" style="width:100%;background:var(--card-2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:15px">${r.notes}</textarea></div>
+
+    <div class="navbtns">
+      <button class="btn ghost" onclick="rangeBack()">← Back</button>
+      <button class="btn" onclick="rangeSave()">Save session ✓</button>
+    </div>`;
+}
+
+/* ============================================================
    VIEW: COACH (strokes-lost breakdown + practice plan)
    ============================================================ */
 const PRACTICE = {
@@ -265,7 +480,19 @@ function viewCoach() {
   const sl = strokesLost(st, S.profile.goal);
   const max = Math.max(...sl.cats.map(c => c.v), 0.1);
   const focus = sl.cats[0];
-  const plan = PRACTICE[focus.key];
+  const sum = practiceSummary();
+  const prog = drillProgress();
+
+  // Are they practicing their biggest leak?
+  let align;
+  if (sum.total === 0) {
+    align = `<div class="hint">You haven't logged any practice yet. Your fastest win: work on <b>${focus.label}</b>.</div>
+      <button class="btn sm" style="margin-top:10px" onclick="startSession('${focus.key}')">Log a ${focus.label} session</button>`;
+  } else if (sum.mostFocus === focus.key) {
+    align = `<div class="hint">✅ Nice — most of your range time is going to <b>${focus.label}</b>, your biggest leak. Keep it up.</div>`;
+  } else {
+    align = `<div class="hint">⚠️ Most of your practice is on <b>${FOCUS[sum.mostFocus].label}</b>, but your biggest leak is <b>${focus.label}</b>. Rebalance to score faster.</div>`;
+  }
 
   app.innerHTML = header('Coach', `goal: ${sl.tier.label}`) + `
     <div class="card">
@@ -280,11 +507,36 @@ function viewCoach() {
     </div>
 
     <div class="card">
-      <h3>🎯 Practice focus: ${plan.title}</h3>
-      <div class="hint" style="margin-bottom:12px">Fixing this is your fastest path to lower scores right now.</div>
-      ${plan.drills.map(d => `<div style="display:flex;gap:10px;margin-bottom:12px">
-        <span style="color:var(--green-lt)">▸</span><div style="font-size:14px;line-height:1.45">${d}</div></div>`).join('')}
+      <h3>🎯 Practice focus: ${focus.label}</h3>
+      <div class="hint" style="margin-bottom:14px">Fixing this is your fastest path to lower scores. Tap a drill to log it at the range.</div>
+      ${DRILLS[focus.key].map(d => `
+        <div class="drill-card" onclick="logDrill('${focus.key}','${d.key}')">
+          <div class="dc-top"><b>${d.name}</b><span class="chip good">good: ${d.target}/${d.max}</span></div>
+          <div class="dc-desc">${d.desc}</div>
+          <div class="dc-log">Log at range →</div>
+        </div>`).join('')}
     </div>
+
+    <div class="card">
+      <h3>Your practice</h3>
+      <div class="grid three" style="margin-bottom:12px">
+        <div class="stat"><div class="v">${sum.total}</div><div class="l">sessions</div></div>
+        <div class="stat"><div class="v">${sum.week}</div><div class="l">this week</div></div>
+        <div class="stat"><div class="v">${sum.mostFocus ? FOCUS[sum.mostFocus].icon : '–'}</div><div class="l">most on</div></div>
+      </div>
+      ${align}
+    </div>
+
+    ${prog.length ? `<div class="card"><h3>Drill progress</h3>
+      ${prog.map(g => {
+        const arrow = g.count < 2 ? '' : g.trend > 0 ? `<span class="up">▲ +${g.trend}</span>` : g.trend < 0 ? `<span class="down">▼ ${g.trend}</span>` : `<span class="flat">→ 0</span>`;
+        return `<div class="bar-row">
+          <div class="top"><b>${FOCUS[g.focus].icon} ${g.drillName}</b>
+            <span class="n">last ${g.last}/${g.max} · best ${g.best} ${arrow}</span></div>
+          <div class="track"><div class="fill putting" style="width:${Math.max(4,(g.last/g.max)*100)}%"></div></div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
 
     <div class="pill-note">Estimates get sharper the more rounds you log. Numbers are relative to your goal tier — change it under <b>You</b>.</div>`;
 }

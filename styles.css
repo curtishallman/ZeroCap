@@ -193,3 +193,29 @@ select, input[type=text] {
 
 .hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
 .pill-note { font-size:11px; color:var(--muted); background:var(--card-2); padding:8px 12px; border-radius:10px; line-height:1.4; }
+
+/* ---------- Range: focus tiles ---------- */
+.focus-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 14px; }
+.focus-tile {
+  appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--txt);
+  border-radius: 16px; padding: 24px 12px; font-size: 15px; font-weight: 700; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; font-family: inherit;
+}
+.focus-tile:active { background: var(--green-dk); }
+.focus-tile .fi { font-size: 34px; }
+
+/* ---------- Range: drill cards ---------- */
+.drill-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; cursor: pointer; }
+.drill-card:active { border-color: var(--green-lt); }
+.dc-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.dc-top b { font-size: 16px; }
+.dc-desc { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.dc-log { font-size: 13px; color: var(--green-lt); font-weight: 700; margin-top: 8px; }
+
+/* ---------- Range: rating stars ---------- */
+.rating { display: flex; gap: 8px; }
+.star {
+  appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  font-size: 24px; width: 56px; height: 52px; border-radius: 12px; cursor: pointer;
+}
+.star.on { color: var(--gold); border-color: var(--gold); background: rgba(232,193,90,.12); }
