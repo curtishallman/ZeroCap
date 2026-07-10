@@ -1,5 +1,5 @@
 /* ZeroCap service worker — network-first so updates land immediately */
-const CACHE = 'zerocap-v15';
+const CACHE = 'zerocap-v16';
 const ASSETS = [
   'index.html', 'styles.css', 'app.js',
   'manifest.webmanifest', 'icon.svg'

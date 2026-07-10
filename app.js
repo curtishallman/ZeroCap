@@ -26,7 +26,7 @@ const DB = {
 let S = DB.load();
 if (!S.practice) S.practice = [];            // migrate older saves
 if (!S.courses) S.courses = {};
-const APP_VERSION = 'v15';
+const APP_VERSION = 'v16';
 const persist = () => DB.save(S);
 
 /* ---------- Helpers ---------- */
@@ -1012,10 +1012,16 @@ function viewPlay() {
             <button class="on" id="h18" onclick="pickHoles(18)">18</button>
             <button id="h9" onclick="pickHoles(9)">9</button>
           </div></div>
-        <div class="field"><label>Course rating & slope (optional — sharpens your cap)</label>
-          <div style="display:flex;gap:10px">
-            <input id="cRating" type="number" inputmode="decimal" placeholder="Rating (e.g. 71.2)" style="width:100%"/>
-            <input id="cSlope" type="number" inputmode="numeric" placeholder="Slope (e.g. 128)" style="width:100%"/>
+        <div class="field"><label>Course rating & slope <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">— optional, sharpens your cap</span></label>
+          <div style="display:flex;gap:12px">
+            <div style="flex:1">
+              <input id="cRating" type="number" inputmode="decimal" placeholder="71.2" style="width:100%;text-align:center;font-size:20px;font-weight:700;padding:14px"/>
+              <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:6px">Rating</div>
+            </div>
+            <div style="flex:1">
+              <input id="cSlope" type="number" inputmode="numeric" placeholder="128" style="width:100%;text-align:center;font-size:20px;font-weight:700;padding:14px"/>
+              <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:6px">Slope</div>
+            </div>
           </div></div>
         <button class="btn" onclick="startRound()">Start round</button>
       </div>
