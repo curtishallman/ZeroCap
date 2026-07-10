@@ -264,6 +264,7 @@ let flashRoundId = null;   // id of a just-saved round, to show its callout once
 function go(tab) {
   TAB = tab;
   if (tab !== 'play') stopGeo();          // don't burn battery off the course
+  if (tab !== 'range') sessionView = null;
   document.querySelectorAll('#tabbar button').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab));
   render();
@@ -500,9 +501,11 @@ function drillProgress() {
    VIEW: RANGE (log practice sessions)
    ============================================================ */
 let RANGE = null;   // in-progress logging flow (transient, not persisted)
+let sessionView = null;   // id of a logged session being viewed/edited
 
 function viewRange() {
   if (RANGE) return renderRangeLog();
+  if (sessionView) return renderSessionDetail();
 
   const st = aggregate(S.rounds);
   const leak = st ? strokesLost(st, S.profile.goal).cats[0] : null;
@@ -538,10 +541,55 @@ function sessItem(s) {
   const badge = s.result != null
     ? `<div class="rel ${s.result >= (s.target ?? 0) ? 'under' : 'over'}">${s.result}/${s.max}</div>`
     : `<div class="rel even">${s.minutes ? s.minutes + 'm' : '—'}</div>`;
-  return `<div class="round-item">
+  return `<div class="round-item" onclick="openSession('${s.id}')">
     <div><div style="font-size:16px;font-weight:700">${s.drillName}</div>
       <div class="meta">${f.label} · ${fmtDate(s.date)}${s.rating ? ' · ' + '★'.repeat(s.rating) : ''}</div></div>
     ${badge}</div>`;
+}
+
+/* ---- view / edit / delete a logged session ---- */
+function openSession(id) { sessionView = id; render(); }
+function closeSession() { sessionView = null; render(); }
+function sessBump(id, field, delta) {
+  const s = S.practice.find(x => x.id === id); if (!s) return;
+  if (field === 'result') s.result = Math.max(0, Math.min(s.max, (s.result || 0) + delta));
+  else if (field === 'minutes') s.minutes = Math.max(0, Math.min(300, (s.minutes || 0) + delta));
+  persist(); render();
+}
+function sessRating(id, r) { const s = S.practice.find(x => x.id === id); if (!s) return; s.rating = (s.rating === r ? 0 : r); persist(); render(); }
+function sessNotes(id, v) { const s = S.practice.find(x => x.id === id); if (s) s.notes = v; }   // no re-render on keystroke
+function deleteSession(id) {
+  if (!confirm('Delete this practice session?')) return;
+  S.practice = S.practice.filter(x => x.id !== id);
+  sessionView = null; persist(); go('range');
+}
+function renderSessionDetail() {
+  const s = S.practice.find(x => x.id === sessionView);
+  if (!s) { sessionView = null; return viewRange(); }
+  const f = FOCUS[s.focus] || { label: s.focus };
+  const isDrill = s.result != null;
+  const stars = [1,2,3,4,5].map(n => `<button class="star ${s.rating >= n ? 'on' : ''}" onclick="sessRating('${s.id}',${n})">★</button>`).join('');
+  app.innerHTML = header('Session', `${f.label} · ${fmtDate(s.date)}`) + `
+    <div class="card">
+      <h3>${s.drillName}</h3>
+      ${isDrill
+        ? `<div class="field"><label>Score — out of ${s.max}${s.target != null ? ` · good is ${s.target}+` : ''}</label>
+            <div class="stepper"><button onclick="sessBump('${s.id}','result',-1)">−</button>
+              <div class="val">${s.result}</div>
+              <button onclick="sessBump('${s.id}','result',1)">+</button></div></div>`
+        : `<div class="field"><label>Time at the range</label>
+            <div class="stepper"><button onclick="sessBump('${s.id}','minutes',-5)">−</button>
+              <div class="val">${s.minutes || 0}<small>minutes</small></div>
+              <button onclick="sessBump('${s.id}','minutes',5)">+</button></div></div>`}
+      <div class="field"><label>How'd it feel?</label><div class="rating">${stars}</div></div>
+      <div class="field"><label>Notes</label>
+        <textarea rows="2" oninput="sessNotes('${s.id}',this.value)" placeholder="swing thoughts, what clicked..."
+          style="width:100%;background:var(--card-2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:15px">${s.notes || ''}</textarea></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn ghost" onclick="closeSession()">← Back</button>
+      <button class="btn danger" onclick="deleteSession('${s.id}')">Delete</button>
+    </div>`;
 }
 
 function startSession(focus) {
