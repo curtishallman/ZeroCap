@@ -792,8 +792,32 @@ function geoMark(type) {
 }
 function geoUndo() {
   const h = curHole();
-  if (h.marks && h.marks.length) { h.marks.pop(); persist(); renderHole(); }
+  if (h.marks && h.marks.length) {
+    const popped = h.marks.pop();
+    if (popped.type === 'green') h.holed = false;   // undoing the lock reopens tracking
+    recalcGps(h); persist(); renderHole();
+  }
 }
+// Derive the hole score from taps: full-swing shots + putts (once putting out) + penalties.
+function recalcGps(h) {
+  const shots = (h.marks || []).filter(m => m.type === 'shot').length;
+  const putts = (h.puttingOut || h.holed) ? (h.putts || 0) : 0;
+  h.score = Math.max(1, shots + putts + (h.pen || 0));
+}
+function geoAtBall() {                          // each press = arrived at ball = +1 stroke
+  if (!lastPos) { alert('No GPS fix yet — give it a few seconds.'); return; }
+  const h = curHole();
+  (h.marks || (h.marks = [])).push({ type: 'shot', lat: lastPos.lat, lng: lastPos.lng, acc: lastPos.acc });
+  recalcGps(h); persist(); renderHole();
+}
+function geoPuttOut() { const h = curHole(); if (h.putts == null) h.putts = 2; h.puttingOut = true; recalcGps(h); persist(); renderHole(); }
+function geoPuttAdjust(d) { const h = curHole(); h.putts = Math.max(0, (h.putts || 0) + d); recalcGps(h); persist(); renderHole(); }
+function geoLockHole() {
+  const h = curHole();
+  if (lastPos) { (h.marks || (h.marks = [])).push({ type: 'green', lat: lastPos.lat, lng: lastPos.lng, acc: lastPos.acc }); saveCourseGeo(h.num, 'green', lastPos); }
+  h.puttingOut = false; h.holed = true; recalcGps(h); persist(); renderHole();
+}
+function geoReopen() { const h = curHole(); h.holed = false; persist(); renderHole(); }
 // live-update just the readout between renders (no full re-render, keeps it smooth)
 function updateGeoLive() {
   const el = document.getElementById('geoLive');
@@ -811,43 +835,106 @@ function geoLiveInner(dtg, acc, green) {
   return `${top}<div style="margin-top:6px"><span class="chip ${accCls}">GPS ${acc != null ? '±' + acc + 'm' : 'searching…'}</span></div>`;
 }
 
-function gpsPanel(h) {
-  if (!gpsOn) {
-    return `<div class="card"><button class="btn ghost" onclick="geoEnable()">📍 Track shots with GPS</button>
-      <div class="hint" style="margin-top:8px;text-align:center">Live distance to the green + shot yardages. Optional.</div></div>`;
+function gpsEnableCard() {
+  return `<div class="card"><button class="btn ghost" onclick="geoEnable()">📍 Track shots with GPS</button>
+    <div class="hint" style="margin-top:8px;text-align:center">Live distance to green + auto stroke counting. Optional.</div></div>`;
+}
+
+function shotList(marks) {
+  let out = '', n = 0;
+  for (let i = 1; i < marks.length; i++) {
+    const yds = Math.round(toYards(metersBetween(marks[i-1], marks[i])));
+    const label = marks[i].type === 'green' ? 'Approach → green' : `Shot ${++n}`;
+    out += `<div class="row" style="padding:8px 0"><div class="lbl">${label}</div><div style="font-weight:700;font-variant-numeric:tabular-nums">${yds} yds</div></div>`;
   }
+  return out;
+}
+
+// Active GPS tracking for a hole: tee → play (with fairway prompt) → putt out.
+function gpsTrackCard(h) {
   const marks = h.marks || [];
-  const hasGreen = marks.some(m => m.type === 'green');
+  const shots = marks.filter(m => m.type === 'shot').length;
+  const hasTee = marks.some(m => m.type === 'tee');
   const green = greenForHole(h);
   const acc = lastPos ? Math.round(lastPos.acc) : null;
   const dtg = (green && lastPos) ? Math.round(toYards(metersBetween(lastPos, green))) : null;
+  const needFairway = hasTee && shots >= 1 && h.par >= 4 && h.fir == null && !h.puttingOut;
 
-  // Stepped actions: tee → play → done. Only show the next relevant step.
   let actions;
-  if (!marks.length) {
-    actions = `<button class="btn" onclick="geoMark('tee')">Mark tee</button>`;
-  } else if (hasGreen) {
-    actions = `<div class="hint" style="text-align:center;font-size:14px">✓ Hole tracked — on to the next tee</div>`;
+  if (!hasTee) {
+    actions = `<button class="btn" onclick="geoMark('tee')">Mark tee</button>
+      <div class="hint" style="text-align:center;margin-top:8px">Stand on the tee and mark it to start.</div>`;
+  } else if (h.puttingOut) {
+    actions = `<div class="field"><label>How many putts?</label>
+      <div class="stepper">
+        <button onclick="geoPuttAdjust(-1)">−</button>
+        <div class="val">${h.putts || 0}</div>
+        <button onclick="geoPuttAdjust(1)">+</button>
+      </div></div>
+      <button class="btn" onclick="geoLockHole()">Lock in hole ✓</button>`;
+  } else if (needFairway) {
+    actions = `<div class="field"><label>Tee shot — did you hit the fairway?</label>
+      <div class="seg">
+        <button onclick="geoSetFir('left')">◀ Left</button>
+        <button onclick="geoSetFir('hit')">Hit ✓</button>
+        <button onclick="geoSetFir('right')">Right ▶</button>
+      </div></div>`;
   } else {
-    actions = `<button class="btn" onclick="geoMark('shot')">📍 At my ball</button>
+    actions = `<button class="btn" onclick="geoAtBall()">📍 At my ball<span style="opacity:.65;font-weight:600"> · +1</span></button>
       <div style="height:8px"></div>
-      <button class="btn ghost sm" onclick="geoMark('green')">I'm on the green</button>`;
+      <button class="btn ghost sm" onclick="geoPuttOut()">On the green — putt out →</button>`;
   }
 
-  let shots = '';
-  let shotNum = 0;
-  for (let i = 1; i < marks.length; i++) {
-    const yds = Math.round(toYards(metersBetween(marks[i-1], marks[i])));
-    const label = marks[i].type === 'green' ? 'Approach → green' : `Shot ${++shotNum}`;
-    shots += `<div class="row" style="padding:9px 0"><div class="lbl">${label}</div><div style="font-weight:700;font-variant-numeric:tabular-nums">${yds} yds</div></div>`;
-  }
+  const showPutts = (h.puttingOut || h.holed) && h.putts;
+  const running = `<div class="hint" style="text-align:center;margin:2px 0 12px">${shots} shot${shots===1?'':'s'}${showPutts?` + ${h.putts} putt${h.putts===1?'':'s'}`:''}${h.pen?` + ${h.pen} pen`:''} → <b>${h.score}</b> so far</div>`;
 
   return `<div class="card">
-    <div id="geoLive" style="text-align:center;margin-bottom:14px">${geoLiveInner(dtg, acc, green)}</div>
+    <div id="geoLive" style="text-align:center;margin-bottom:10px">${geoLiveInner(dtg, acc, green)}</div>
+    ${running}
     ${actions}
-    ${marks.length ? `<div style="margin-top:10px">${shots}
-      <div style="text-align:right;margin-top:4px"><button class="btn ghost sm" onclick="geoUndo()">Undo last mark</button></div></div>` : ''}
+    ${marks.length ? `<div style="margin-top:12px">${shotList(marks)}
+      <div style="text-align:right;margin-top:4px"><button class="btn ghost sm" onclick="geoUndo()">Undo last</button></div></div>` : ''}
   </div>`;
+}
+function geoSetFir(v) { const h = curHole(); h.fir = v; persist(); renderHole(); }
+
+// After locking a GPS hole: read-only shot summary + reopen.
+function gpsReviewCard(h) {
+  const marks = h.marks || [];
+  return `<div class="card">
+    <div class="hint" style="text-align:center;margin-bottom:${marks.length>1?'8px':'0'}">✓ Hole tracked — edit anything below, then Next</div>
+    ${marks.length > 1 ? `<div>${shotList(marks)}</div>` : ''}
+    <div style="text-align:right;margin-top:4px"><button class="btn ghost sm" onclick="geoReopen()">↺ Reopen tracking</button></div>
+  </div>`;
+}
+
+// The manual stepper block — used in non-GPS mode and for editing a locked GPS hole.
+function manualFields(h) {
+  const f = holeFacts(h);
+  return `
+    <div class="field"><label>Score</label>
+      <div class="stepper"><button onclick="bump('score',-1)">−</button>
+        <div class="val">${h.score}<small>${relStr(f.toPar)}</small></div>
+        <button onclick="bump('score',1)">+</button></div></div>
+    <div class="field"><label>Putts</label>
+      <div class="stepper"><button onclick="bump('putts',-1)">−</button>
+        <div class="val">${h.putts}<small>${f.threePutt?'3-putt':'&nbsp;'}</small></div>
+        <button onclick="bump('putts',1)">+</button></div></div>
+    ${h.par >= 4 ? `<div class="field"><label>Fairway</label>
+      <div class="seg">
+        <button class="${h.fir==='left'?'on miss':''}" onclick="setFir('left')">◀ Left</button>
+        <button class="${h.fir==='hit'?'on':''}" onclick="setFir('hit')">Hit ✓</button>
+        <button class="${h.fir==='right'?'on miss':''}" onclick="setFir('right')">Right ▶</button>
+      </div></div>` : ''}
+    <div class="field"><label>Penalty strokes</label>
+      <div class="stepper"><button onclick="bump('pen',-1)">−</button>
+        <div class="val">${h.pen}</div>
+        <button onclick="bump('pen',1)">+</button></div></div>
+    <div class="derived">
+      <span class="chip ${f.gir?'good':'bad'}">${f.gir?'GIR ✓':'Missed green'}</span>
+      ${!f.gir ? `<span class="chip ${f.scrambleWin?'good':''}">${f.scrambleWin?'Up & down ✓':'Scramble'}</span>` : ''}
+      ${f.threePutt ? `<span class="chip bad">3-putt</span>` : ''}
+    </div>`;
 }
 
 /* ============================================================
@@ -912,9 +999,17 @@ function startRound() {
 function renderHole() {
   const d = S.draft;
   const h = d.holes[d.idx];
-  const f = holeFacts(h);
   const prog = ((d.idx) / d.holes.length) * 100;
   if (gpsOn) startGeo();
+
+  const tracking = gpsOn && !h.holed;                 // active GPS tracking (no manual steppers)
+  const shotCount = (h.marks || []).filter(m => m.type === 'shot').length;
+  const headScore = tracking ? (shotCount + (h.puttingOut ? (h.putts || 0) : 0) + (h.pen || 0)) : h.score;
+
+  let body;
+  if (!gpsOn) body = gpsEnableCard() + manualFields(h);
+  else if (tracking) body = gpsTrackCard(h);
+  else body = gpsReviewCard(h) + manualFields(h);
 
   app.innerHTML = `
     <div class="playtop">
@@ -924,11 +1019,9 @@ function renderHole() {
     <div class="progress"><span style="width:${prog}%"></span></div>
 
     <div class="holehdr">
-      <div class="num">Hole ${h.num} of ${d.holes.length}</div>
-      <div class="par">${h.score}<small> strokes</small></div>
+      <div class="num">Hole ${h.num} of ${d.holes.length} · par ${h.par}</div>
+      <div class="par">${headScore}<small> strokes</small></div>
     </div>
-
-    ${gpsPanel(h)}
 
     <div class="field">
       <label>Par</label>
@@ -937,48 +1030,7 @@ function renderHole() {
       </div>
     </div>
 
-    <div class="field">
-      <label>Score</label>
-      <div class="stepper">
-        <button onclick="bump('score',-1)">−</button>
-        <div class="val">${h.score}<small>${relStr(f.toPar)}</small></div>
-        <button onclick="bump('score',1)">+</button>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Putts</label>
-      <div class="stepper">
-        <button onclick="bump('putts',-1)">−</button>
-        <div class="val">${h.putts}<small>${f.threePutt?'3-putt':'&nbsp;'}</small></div>
-        <button onclick="bump('putts',1)">+</button>
-      </div>
-    </div>
-
-    ${h.par >= 4 ? `
-    <div class="field">
-      <label>Fairway</label>
-      <div class="seg">
-        <button class="${h.fir==='left'?'on miss':''}" onclick="setFir('left')">◀ Left</button>
-        <button class="${h.fir==='hit'?'on':''}" onclick="setFir('hit')">Hit ✓</button>
-        <button class="${h.fir==='right'?'on miss':''}" onclick="setFir('right')">Right ▶</button>
-      </div>
-    </div>` : ''}
-
-    <div class="field">
-      <label>Penalty strokes</label>
-      <div class="stepper">
-        <button onclick="bump('pen',-1)">−</button>
-        <div class="val">${h.pen}</div>
-        <button onclick="bump('pen',1)">+</button>
-      </div>
-    </div>
-
-    <div class="derived">
-      <span class="chip ${f.gir?'good':'bad'}">${f.gir?'GIR ✓':'Missed green'}</span>
-      ${!f.gir ? `<span class="chip ${f.scrambleWin?'good':''}">${f.scrambleWin?'Up & down ✓':'Scramble'}</span>` : ''}
-      ${f.threePutt ? `<span class="chip bad">3-putt</span>` : ''}
-    </div>
+    ${body}
 
     <div class="navbtns">
       <button class="btn ghost" onclick="prevHole()" ${d.idx===0?'disabled style=opacity:.4':''}>← Prev</button>
