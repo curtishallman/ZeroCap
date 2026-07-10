@@ -26,6 +26,7 @@ const DB = {
 let S = DB.load();
 if (!S.practice) S.practice = [];            // migrate older saves
 if (!S.courses) S.courses = {};
+const APP_VERSION = 'v14';
 const persist = () => DB.save(S);
 
 /* ---------- Helpers ---------- */
@@ -1200,10 +1201,20 @@ function viewSettings() {
     <div class="card">
       <h3>Data</h3>
       <div class="btn-row" style="margin-bottom:10px">
-        <button class="btn ghost sm" onclick="loadSample()">Load sample rounds</button>
-        <button class="btn ghost sm" onclick="exportData()">Export JSON</button>
+        <button class="btn ghost sm" onclick="exportData()">Export backup</button>
+        <button class="btn ghost sm" onclick="importData()">Import backup</button>
       </div>
-      <button class="btn danger" onclick="wipe()">Erase all data</button>
+      <div class="btn-row">
+        <button class="btn ghost sm" onclick="loadSample()">Load sample rounds</button>
+        <button class="btn danger sm" onclick="wipe()">Erase all data</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>App</h3>
+      <div class="row"><div class="lbl">Version<small>if things look stale, force an update</small></div>
+        <div style="font-weight:700">${APP_VERSION}</div></div>
+      <button class="btn ghost" style="margin-top:12px" onclick="forceUpdate()">Force update — get latest</button>
+      <div class="hint" style="margin-top:8px">Refreshes to the newest version. Your logged rounds & sessions are kept.</div>
     </div>
     <div class="pill-note">Everything is stored locally on this device. Cloud sync & accounts come when we add the paid tier.</div>`;
 }
@@ -1215,7 +1226,31 @@ function wipe(){ if(confirm('Erase ALL rounds and settings?')){ S = DB.fresh(); 
 function exportData(){
   const blob = new Blob([JSON.stringify(S,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob); const a = document.createElement('a');
-  a.href = url; a.download = 'grind-data.json'; a.click(); URL.revokeObjectURL(url);
+  a.href = url; a.download = 'zerocap-backup.json'; a.click(); URL.revokeObjectURL(url);
+}
+function importData(){
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json';
+  inp.onchange = () => {
+    const file = inp.files && inp.files[0]; if (!file) return;
+    const r = new FileReader();
+    r.onload = () => {
+      let data; try { data = JSON.parse(r.result); } catch { alert('Could not read that file.'); return; }
+      if (!data || typeof data !== 'object' || !data.profile) { alert('That is not a ZeroCap backup.'); return; }
+      if (!confirm('Replace all current data with this backup?')) return;
+      S = data; if (!S.practice) S.practice = []; if (!S.courses) S.courses = {};
+      persist(); go('home'); alert('Backup imported.');
+    };
+    r.readAsText(file);
+  };
+  inp.click();
+}
+// Clears the service worker + caches (NOT your logged data) and reloads to the latest version.
+async function forceUpdate(){
+  try {
+    if ('serviceWorker' in navigator) { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r => r.unregister())); }
+    if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); }
+  } catch {}
+  location.reload();
 }
 
 /* ---------- Sample data ---------- */
@@ -1251,5 +1286,5 @@ go('home');
 
 /* ---------- service worker ---------- */
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 }
