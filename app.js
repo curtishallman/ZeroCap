@@ -54,10 +54,10 @@ const TIERS = {
 
 /* Focus areas — shared by Coach (leaks) and Range (practice). */
 const FOCUS = {
-  tee:      { label: 'Off the tee', icon: '🚀', blurb: 'driving & accuracy' },
-  approach: { label: 'Approach',    icon: '🎯', blurb: 'irons & hitting greens' },
-  short:    { label: 'Short game',  icon: '⛳', blurb: 'chipping & pitching' },
-  putting:  { label: 'Putting',     icon: '🥅', blurb: 'on the greens' },
+  tee:      { label: 'Off the tee', short: 'Tee',      blurb: 'driving & accuracy' },
+  approach: { label: 'Approach',    short: 'Approach', blurb: 'irons & hitting greens' },
+  short:    { label: 'Short game',  short: 'Short',    blurb: 'chipping & pitching' },
+  putting:  { label: 'Putting',     short: 'Putting',  blurb: 'on the greens' },
 };
 
 /* Structured, scoreable drills. result out of `max`; `target` is a "good" score. */
@@ -234,9 +234,9 @@ function roundCallout(r) {
   const over = diff - cap.index;                 // + means worse than cap
   const capStr = fmtCap(cap.index);
   const played = diff.toFixed(1);
-  if (over >= 4)    return { tone: 'bad',  msg: `Oof. That one played to <b>${played}</b> — well above your <b>${capStr}</b> cap. 👀 The cap doesn't lie. Get to the Range.` };
+  if (over >= 4)    return { tone: 'bad',  msg: `Oof. That one played to <b>${played}</b> — well above your <b>${capStr}</b> cap. The cap doesn't lie. Get to the Range.` };
   if (over >= 1.5)  return { tone: 'warn', msg: `That played to <b>${played}</b>, a bit over your <b>${capStr}</b> cap. Shake it off and grind it back.` };
-  if (over <= -1.5) return { tone: 'good', msg: `🔥 <b>${played}</b> — better than your <b>${capStr}</b> cap. Keep that up and it's dropping.` };
+  if (over <= -1.5) return { tone: 'good', msg: `<b>${played}</b> — better than your <b>${capStr}</b> cap. Keep that up and it's dropping.` };
   return { tone: 'good', msg: `Right around your <b>${capStr}</b> cap. Steady golf.` };
 }
 function calloutCard(c) {
@@ -283,7 +283,7 @@ function render() {
 
 function header(title, sub) {
   return `<div class="hd"><div class="brand">
-      <div class="mark">⛳</div>
+      <div class="mark"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#eaf3ee" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 21V4"/><path d="M6.5 5.2 16 7.6 6.5 10z" fill="#e8c15a" stroke="none"/></svg></div>
       <div><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>
     </div></div>`;
 }
@@ -362,7 +362,6 @@ function viewHome() {
     if (!S.profile.onboarded && S.profile.startCap == null) {
       app.innerHTML = header('ZeroCap', 'play to zero') + `
         <div class="empty">
-          <div class="big-ico">⛳</div>
           <h2>Welcome to ZeroCap</h2>
           <p>Let's set your starting cap and get a read on your game — 20 seconds — so Coach can help before your very first round.</p>
           <button class="btn" onclick="go('onboard')">Set up my game →</button>
@@ -386,7 +385,7 @@ function viewHome() {
           <button class="btn" onclick="go('play')">Log a round</button>
           <button class="btn ghost" onclick="startSession('${S.profile.weak}')">Practice ${weak.label}</button>
         </div>
-      </div>` : `<button class="btn" onclick="go('play')">Log your first round ⛳</button>`}
+      </div>` : `<button class="btn" onclick="go('play')">Log your first round</button>`}
       <div class="pill-note" style="margin-top:14px">Your real cap starts computing after 3 logged rounds and replaces this self-reported number.</div>`;
     return;
   }
@@ -420,7 +419,7 @@ function viewHome() {
     ${cap.established && hist.length >= 2 ? `<div class="card">
       <h3>Cap trend · last ${Math.min(hist.length, 14)} rounds</h3>
       ${capSpark(hist)}
-      <div class="hint">${cap.index > 0 ? `<b>${cap.index.toFixed(1)}</b> to scratch. ` : `You're at scratch or better 🏆 `}Best 8 of your last 20 (WHS-style). ${hasRatings ? '' : 'Add course rating & slope when you play for sharper numbers.'}</div>
+      <div class="hint">${cap.index > 0 ? `<b>${cap.index.toFixed(1)}</b> to scratch. ` : `You're at scratch or better. `}Best 8 of your last 20 (WHS-style). ${hasRatings ? '' : 'Add course rating & slope when you play for sharper numbers.'}</div>
     </div>` : ''}
 
     <div class="card" style="border-color:var(--gold)">
@@ -512,7 +511,7 @@ function viewRange() {
   let banner = '';
   if (leak && leak.v > 0.1) {
     banner = `<div class="card" style="border-color:var(--gold)">
-      <h3>🎯 Coach says</h3>
+      <h3>Coach says</h3>
       <div style="font-size:16px;margin-bottom:10px">Your biggest leak is <b>${leak.label}</b> (-${leak.v.toFixed(1)} shots/round). Warm it up before you play.</div>
       <button class="btn" onclick="startSession('${leak.key}')">Practice ${leak.label} →</button>
     </div>`;
@@ -521,7 +520,7 @@ function viewRange() {
   const sessions = [...S.practice].reverse().slice(0, 12).map(sessItem).join('');
   const list = S.practice.length
     ? `<div class="section-title">Recent sessions</div>${sessions}`
-    : `<div class="empty" style="padding:30px 10px"><div class="big-ico">🪣</div>
+    : `<div class="empty" style="padding:30px 10px">
         <h2>No practice logged</h2><p>Log what you work on at the range. Tie it to your leaks and watch your drill scores climb.</p></div>`;
 
   app.innerHTML = header('Range', 'practice with purpose') + banner + `
@@ -529,18 +528,18 @@ function viewRange() {
     ${S.practice.length ? `<div class="grid three" style="margin-top:14px">
       <div class="stat"><div class="v">${sum.total}</div><div class="l">sessions</div></div>
       <div class="stat"><div class="v">${sum.week}</div><div class="l">this week</div></div>
-      <div class="stat"><div class="v">${sum.mostFocus ? FOCUS[sum.mostFocus].icon : '–'}</div><div class="l">most practiced</div></div>
+      <div class="stat"><div class="v" style="font-size:18px">${sum.mostFocus ? FOCUS[sum.mostFocus].short : '–'}</div><div class="l">most practiced</div></div>
     </div>` : ''}
     ${list}`;
 }
 
 function sessItem(s) {
-  const f = FOCUS[s.focus] || { icon: '⛳', label: s.focus };
+  const f = FOCUS[s.focus] || { label: s.focus };
   const badge = s.result != null
     ? `<div class="rel ${s.result >= (s.target ?? 0) ? 'under' : 'over'}">${s.result}/${s.max}</div>`
     : `<div class="rel even">${s.minutes ? s.minutes + 'm' : '—'}</div>`;
   return `<div class="round-item">
-    <div><div style="font-size:16px;font-weight:700">${f.icon} ${s.drillName}</div>
+    <div><div style="font-size:16px;font-weight:700">${s.drillName}</div>
       <div class="meta">${f.label} · ${fmtDate(s.date)}${s.rating ? ' · ' + '★'.repeat(s.rating) : ''}</div></div>
     ${badge}</div>`;
 }
@@ -607,7 +606,7 @@ function renderRangeLog() {
           <div class="dc-desc">${d.desc}</div>
         </div>`).join('')}
       <div class="drill-card" onclick="rangePickDrill('')">
-        <div class="dc-top"><b>🪣 Just hit balls</b></div>
+        <div class="dc-top"><b>Just hit balls</b></div>
         <div class="dc-desc">Freeform session — log time & how it felt.</div>
       </div>
       <button class="btn ghost" onclick="rangeBack()">← Back</button>`;
@@ -660,7 +659,7 @@ function viewCoach() {
       const f = FOCUS[weakKey];
       app.innerHTML = header('Coach', 'starting plan') + `
         <div class="card" style="border-color:var(--gold)">
-          <h3>🎯 Starting focus: ${f.label}</h3>
+          <h3>Starting focus: ${f.label}</h3>
           <div class="hint" style="margin-bottom:14px">You told us this is your weak spot — here's where to start. Log a round and Coach confirms it with real strokes-lost data.</div>
           ${DRILLS[weakKey].map(d => `<div class="drill-card" onclick="logDrill('${weakKey}','${d.key}')">
             <div class="dc-top"><b>${d.name}</b><span class="chip good">good: ${d.target}/${d.max}</span></div>
@@ -669,7 +668,7 @@ function viewCoach() {
         <button class="btn" onclick="go('play')">Log a round for full analysis</button>`;
       return;
     }
-    app.innerHTML = header('Coach') + `<div class="empty"><div class="big-ico">🎯</div>
+    app.innerHTML = header('Coach') + `<div class="empty">
       <h2>Coach needs data</h2><p>Log a round or two and Coach will pinpoint exactly where you're losing strokes and what to practice. Or set your weak spot in <b>You → Your game</b>.</p>
       <button class="btn" onclick="go('play')">Log a round</button></div>`;
     return;
@@ -686,9 +685,9 @@ function viewCoach() {
     align = `<div class="hint">You haven't logged any practice yet. Your fastest win: work on <b>${focus.label}</b>.</div>
       <button class="btn sm" style="margin-top:10px" onclick="startSession('${focus.key}')">Log a ${focus.label} session</button>`;
   } else if (sum.mostFocus === focus.key) {
-    align = `<div class="hint">✅ Nice — most of your range time is going to <b>${focus.label}</b>, your biggest leak. Keep it up.</div>`;
+    align = `<div class="hint">Nice — most of your range time is going to <b>${focus.label}</b>, your biggest leak. Keep it up.</div>`;
   } else {
-    align = `<div class="hint">⚠️ Most of your practice is on <b>${FOCUS[sum.mostFocus].label}</b>, but your biggest leak is <b>${focus.label}</b>. Rebalance to score faster.</div>`;
+    align = `<div class="hint">Heads up — most of your practice is on <b>${FOCUS[sum.mostFocus].label}</b>, but your biggest leak is <b>${focus.label}</b>. Rebalance to score faster.</div>`;
   }
 
   app.innerHTML = header('Coach', `goal: ${sl.tier.label}`) + `
@@ -704,7 +703,7 @@ function viewCoach() {
     </div>
 
     <div class="card">
-      <h3>🎯 Practice focus: ${focus.label}</h3>
+      <h3>Practice focus: ${focus.label}</h3>
       <div class="hint" style="margin-bottom:14px">Fixing this is your fastest path to lower scores. Tap a drill to log it at the range.</div>
       ${DRILLS[focus.key].map(d => `
         <div class="drill-card" onclick="logDrill('${focus.key}','${d.key}')">
@@ -719,7 +718,7 @@ function viewCoach() {
       <div class="grid three" style="margin-bottom:12px">
         <div class="stat"><div class="v">${sum.total}</div><div class="l">sessions</div></div>
         <div class="stat"><div class="v">${sum.week}</div><div class="l">this week</div></div>
-        <div class="stat"><div class="v">${sum.mostFocus ? FOCUS[sum.mostFocus].icon : '–'}</div><div class="l">most on</div></div>
+        <div class="stat"><div class="v" style="font-size:18px">${sum.mostFocus ? FOCUS[sum.mostFocus].short : '–'}</div><div class="l">most on</div></div>
       </div>
       ${align}
     </div>
@@ -728,7 +727,7 @@ function viewCoach() {
       ${prog.map(g => {
         const arrow = g.count < 2 ? '' : g.trend > 0 ? `<span class="up">▲ +${g.trend}</span>` : g.trend < 0 ? `<span class="down">▼ ${g.trend}</span>` : `<span class="flat">→ 0</span>`;
         return `<div class="bar-row">
-          <div class="top"><b>${FOCUS[g.focus].icon} ${g.drillName}</b>
+          <div class="top"><b>${g.drillName}</b>
             <span class="n">last ${g.last}/${g.max} · best ${g.best} ${arrow}</span></div>
           <div class="track"><div class="fill putting" style="width:${Math.max(4,(g.last/g.max)*100)}%"></div></div>
         </div>`;
@@ -836,7 +835,7 @@ function geoLiveInner(dtg, acc, green) {
 }
 
 function gpsEnableCard() {
-  return `<div class="card"><button class="btn ghost" onclick="geoEnable()">📍 Track shots with GPS</button>
+  return `<div class="card"><button class="btn ghost" onclick="geoEnable()">Track shots with GPS</button>
     <div class="hint" style="margin-top:8px;text-align:center">Live distance to green + auto stroke counting. Optional.</div></div>`;
 }
 
@@ -880,7 +879,7 @@ function gpsTrackCard(h) {
         <button onclick="geoSetFir('right')">Right ▶</button>
       </div></div>`;
   } else {
-    actions = `<button class="btn" onclick="geoAtBall()">📍 At my ball<span style="opacity:.65;font-weight:600"> · +1</span></button>
+    actions = `<button class="btn" onclick="geoAtBall()">At my ball<span style="opacity:.65;font-weight:600"> · +1</span></button>
       <div style="height:8px"></div>
       <button class="btn ghost sm" onclick="geoPuttOut()">On the green — putt out →</button>`;
   }
@@ -969,7 +968,7 @@ function viewPlay() {
             <input id="cRating" type="number" inputmode="decimal" placeholder="Rating (e.g. 71.2)" style="width:100%"/>
             <input id="cSlope" type="number" inputmode="numeric" placeholder="Slope (e.g. 128)" style="width:100%"/>
           </div></div>
-        <button class="btn" onclick="startRound()">Start round ⛳</button>
+        <button class="btn" onclick="startRound()">Start round</button>
       </div>
       <div class="pill-note">Par defaults to a standard layout — you can bump each hole's par in one tap as you play. Leave rating/slope blank and we'll estimate your cap from par.</div>`;
     return;
@@ -1074,7 +1073,7 @@ function finishRound() {
    ============================================================ */
 function viewRounds() {
   if (!S.rounds.length) {
-    app.innerHTML = header('Rounds') + `<div class="empty"><div class="big-ico">📋</div>
+    app.innerHTML = header('Rounds') + `<div class="empty">
       <h2>No rounds yet</h2><p>Your logged rounds will show up here with full scorecards.</p>
       <button class="btn" onclick="go('play')">Start a round</button></div>`;
     return;
