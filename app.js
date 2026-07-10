@@ -26,7 +26,7 @@ const DB = {
 let S = DB.load();
 if (!S.practice) S.practice = [];            // migrate older saves
 if (!S.courses) S.courses = {};
-const APP_VERSION = 'v14';
+const APP_VERSION = 'v15';
 const persist = () => DB.save(S);
 
 /* ---------- Helpers ---------- */
@@ -1191,7 +1191,7 @@ function viewSettings() {
     <div class="card">
       <h3>Your game</h3>
       <div class="row"><div class="lbl">Starting cap<small>self-reported, used until 3 rounds logged</small></div>
-        <input type="number" inputmode="decimal" value="${S.profile.startCap ?? ''}" onchange="setStartCap(this.value)" placeholder="—" style="width:88px"/></div>
+        <select onchange="setStartCap(this.value)">${capOptions(S.profile.startCap ?? null)}</select></div>
       <div class="row"><div class="lbl">Weak spot<small>Coach's starting focus</small></div>
         <select onchange="setWeak(this.value)">
           <option value="">—</option>
@@ -1221,6 +1221,18 @@ function viewSettings() {
 function setName(v){ S.profile.name = v.trim(); persist(); }
 function setGoal(v){ S.profile.goal = v; persist(); }
 function setStartCap(v){ const n = parseFloat(v); S.profile.startCap = isFinite(n) ? n : null; persist(); }
+function capOptions(current){
+  const vals = [];
+  for (let i = -5; i <= 36; i++) vals.push(i);          // +5 (plus) … 0 (scratch) … 36
+  if (current != null && !vals.includes(current)) vals.push(current);   // keep an exact decimal if set
+  vals.sort((a, b) => a - b);
+  const opts = ['<option value="">—</option>'];
+  for (const v of vals) {
+    const label = v < 0 ? '+' + Math.abs(v) : String(v);
+    opts.push(`<option value="${v}" ${current === v ? 'selected' : ''}>${label}</option>`);
+  }
+  return opts.join('');
+}
 function setWeak(v){ S.profile.weak = v || null; persist(); }
 function wipe(){ if(confirm('Erase ALL rounds and settings?')){ S = DB.fresh(); persist(); go('home'); } }
 function exportData(){
